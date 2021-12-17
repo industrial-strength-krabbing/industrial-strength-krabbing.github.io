@@ -1684,8 +1684,15 @@ function addItem(itemId)
 		if (item.specialType == "item")
 		{
 			var discountAvailable = ""
-			if ((item.category in categoryRates) || (item.name in itemRates))
-				discountAvailable = "<b>Flat Rate Available</b>";
+			if (item.name in itemRates)
+			{
+				var maxRunsExpected = item.maxRuns;
+				if (item.name in itemRateMaxRuns)
+					maxRunsExpected = itemRateMaxRuns[item.name];
+				discountAvailable = "<b>Flat Rate: " + itemRates[item.name].toLocaleString("en-US") + " ISK for " + maxRunsExpected + " runs </b>";
+			}
+			else if (item.category in categoryRates)
+				discountAvailable = "<b>Flat Rate: " + categoryRates[item.category].toLocaleString("en-US") + " ISK for " + item.maxRuns + " runs </b>";
 			var addButton = "<input type='button' name='addButton" + item.id + "' value='Add' onClick='addItem(" + item.id + ")'/>"
 			itemsTableHTML += "<tr><td>" + item.name + "</td><td>" + addButton + "</td><td>" + item.baseRate.toFixed(2) + " ISK</td><td>" + discountAvailable + "</td></tr>\n";
 		}
