@@ -1557,15 +1557,17 @@ function updateShoppingCartPrices()
 		var isDiscountEligible = false;
 		
 		var hasItemRate = (item.name in itemRates);
+		var hasCategoryRate = (item.category in categoryRates);
 		var rateMaxRuns = maxRuns;
 		if (hasItemRate && (item.name in itemRateMaxRuns))
 			rateMaxRuns = itemRateMaxRuns[item.name];
 
 		var bpPrice = scItem.runCount * item.baseRate;
-		if ((item.category in categoryRates) && scItem.runCount == rateMaxRuns)
+		
+		if (hasItemRate && scItem.runCount == rateMaxRuns)
 		{
 			isDiscountEligible = true;
-			var discountBPPrice = categoryRates[item.category];
+			var discountBPPrice = itemRates[item.name];
 			discountRateTotal += discountBPPrice * scItem.quantity;
 			if (discountBPPrice < bpPrice)
 			{
@@ -1573,10 +1575,10 @@ function updateShoppingCartPrices()
 				isDiscountRate = true;
 			}
 		}
-		else if ((item.name in itemRates) && scItem.runCount == rateMaxRuns)
+		else if (hasCategoryRate && scItem.runCount == rateMaxRuns)
 		{
 			isDiscountEligible = true;
-			var discountBPPrice = itemRates[item.name];
+			var discountBPPrice = categoryRates[item.category];
 			discountRateTotal += discountBPPrice * scItem.quantity;
 			if (discountBPPrice < bpPrice)
 			{
@@ -1596,8 +1598,10 @@ function updateShoppingCartPrices()
 		var bpSubtotal = bpPrice * scItem.quantity;
 		if (isDiscountEligible)
 			priceBasisText = "Yes";
-		else
+		else if (hasItemRate || hasCategoryRate)
 			priceBasisText = "No (Runs must be " + rateMaxRuns + ")";
+		else
+			priceBasisText = "No";
 
 		document.getElementById('scPricePerBlueprint' + i).innerHTML = bpPrice.toFixed(2) + " ISK";
 		document.getElementById('scPriceBasis' + i).innerHTML = priceBasisText;
