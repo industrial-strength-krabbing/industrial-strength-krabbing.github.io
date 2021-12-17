@@ -7,11 +7,8 @@
 
 <form>
 
-<div id="mainTable"></div><br/><br/>
 
-<hr/>
-
-<b>Shopping Cart:</b><br/>
+<h2>Shopping Cart:</h2><br/>
 <div id="shoppingCart"></div><br/><br/>
 
 Price:<br/>
@@ -19,12 +16,20 @@ Price:<br/>
 
 <p style="font-size:24px">Your order code: <input type="text" size="100" id="quickrefcode" style="font-size:24px"></input></p><br/><br/>
 
-
-
-
 <input type="button" name="warnButton" value="I have an order code and need it decoded" onClick="document.getElementById('warnButton2').disabled = false;"/><br/>
 <input type="button" name="warnButton2" id="warnButton2" value="I understand that decoding an order code will delete everything already entered on this form" onClick="document.getElementById('decButton').disabled = false;" disabled="true"/><br/>
 <input type="button" name="decButton" id="decButton" value="Decode my order code" onClick="decodeOrder()" disabled="true"/></form>
+
+<hr/>
+
+<h2>Items</h2>
+
+<table border="1" width="100%">
+<tr><td>
+<div id="mainTable" style="overflow:scroll; height:500px"></div>
+</td></tr>
+</table>
+
 
 <script type="text/javascript">
 var upArrowCode = 38;
