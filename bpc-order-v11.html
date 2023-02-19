@@ -1,0 +1,2019 @@
+<META HTTP-EQUIV="EXPIRES" CONTENT="0"/>
+
+<html><head>
+<title>StretchMart BPC Custom Order Ticket</title>
+</head>
+<body>
+
+<form>
+
+
+<h2>Shopping Cart:</h2><br/>
+<div id="shoppingCart"></div><br/><br/>
+
+Price:<br/>
+<div id="priceDisplay"></div><br/><br/>
+
+<p style="font-size:24px">Your order code: <input type="text" size="100" id="quickrefcode" style="font-size:24px"></input></p><br/><br/>
+
+<input type="button" name="warnButton" value="I have an order code and need it decoded" onClick="document.getElementById('warnButton2').disabled = false;"/><br/>
+<input type="button" name="warnButton2" id="warnButton2" value="I understand that decoding an order code will delete everything already entered on this form" onClick="document.getElementById('decButton').disabled = false;" disabled="true"/><br/>
+<input type="button" name="decButton" id="decButton" value="Decode my order code" onClick="decodeOrder()" disabled="true"/></form>
+
+<hr/>
+
+<h2>Items</h2>
+
+<table border="1" width="100%">
+<tr><td>
+<div id="mainTable" style="overflow:scroll; height:500px"></div>
+</td></tr>
+</table>
+
+
+<script type="text/javascript">
+var upArrowCode = 38;
+var downArrowCode = 40;
+
+var base64key = "tHMnioKu7?q2pxAfVJQ9whFSrNY#cR86W&zdBG3k1T4sPELj$U5CZ!XbmyeagDv-";
+
+
+var itemForID = new Object();
+var numItems;
+var locationRate = 1;
+
+var currentVersion = 11;
+
+var shoppingCart = new Array();
+
+function navigateItems(keyCode, baseID)
+{
+	if(keyCode == upArrowCode)
+		baseID--;
+	else if(keyCode == downArrowCode)
+		baseID++;
+	else
+		return;
+
+	var altQuantity = document.getElementById('itemQuantity' + baseID);
+
+	if(altQuantity)
+		altQuantity.focus();
+}
+
+// Convert sequential to variable-length 3-bit codes
+function sequentialToFourBit(base)
+{
+	var result = new Array();
+
+	for(var i=0;i<base.length;i++)
+	{
+		var n = Math.round(base[i]);
+
+		while(n > 7)
+		{
+			var remainder = (n % 8);
+			result.push(remainder + 8);
+			n = (n - remainder) / 8;
+		}
+		result.push(n);
+	}
+
+	return result;
+}
+
+function fourBitToEncoded(base)
+{
+	var currentValue = 0;
+	var currentBits = 0;
+	var result = "";
+
+	for(var i=0;i<base.length;i++)
+	{
+		currentValue += base[i] << currentBits;
+		currentBits += 4;
+
+		if(currentBits >= 6)
+		{
+			var remainder = currentValue % 64;
+			result += base64key[remainder];
+			currentValue = (currentValue - remainder) / 64;
+			currentBits -= 6;
+		}
+	}
+
+	// Flush remainder
+	if(currentBits > 0)
+		result += base64key[currentValue];
+
+	return result;
+}
+
+
+
+function encodedToFourBit(base)
+{
+	var currentValue = 0;
+	var currentBits = 0;
+	var result = new Array();
+
+	for(var i=0;i<base.length;i++)
+	{
+		var codedValue = base64key.indexOf(base[i]);
+
+		currentValue += codedValue << currentBits;
+		currentBits += 6;
+
+		while(currentBits >= 4)
+		{
+			var remainder = currentValue % 16;
+			result.push(remainder);
+			currentValue = (currentValue - remainder) / 16;
+			currentBits -= 4;
+		}
+	}
+
+	return result;
+}
+
+
+function fourBitToSequential(base)
+{
+	var result = new Array();
+	var baseValue = 0;
+	var bitOffset = 0;
+
+	for(var i=0;i<base.length;i++)
+	{
+		var v = base[i];
+
+		baseValue += (v % 8) << bitOffset;
+
+		if(v > 7)
+			bitOffset += 3;
+		else
+		{
+			result.push(baseValue);
+			baseValue = 0;
+			bitOffset = 0;
+		}
+	}
+
+	return result;
+}
+
+function resetAppraisal()
+{
+	var finalPrice = 0;
+
+	for(var i=0;i<numItems;i++)
+	{
+		var quant = Math.round(document.getElementById('itemQuantity' + i).value);
+
+		finalPrice += quant * itemForID[i].price;
+	}
+
+	document.getElementById('totaldisplay').innerHTML = "<b>" + formatPrice(Math.round(finalPrice)) + "</b>";
+}
+
+function encodeOrder()
+{
+	if (shoppingCart.length > 0)
+	{
+		var coefArray = new Array();
+
+		coefArray.push(currentVersion);		// Stamp this version
+		coefArray.push(shoppingCart.length - 1);
+
+		for(var i=0;i<shoppingCart.length;i++)
+		{
+			var scItem = shoppingCart[i];
+			coefArray.push(scItem.id);
+			coefArray.push(scItem.runCount - 1);
+			coefArray.push(scItem.quantity - 1);
+		}
+
+		var qcode = fourBitToEncoded(sequentialToFourBit(coefArray));
+		document.getElementById('quickrefcode').value = qcode;
+	}
+	else
+		document.getElementById('quickrefcode').value = "";
+}
+
+
+function decodeOrder()
+{
+	var coefArray = fourBitToSequential(encodedToFourBit(document.getElementById('quickrefcode').value));
+	var expandedCoefs = new Array();
+
+	var nextRLE = false;
+
+	if(coefArray[0] != currentVersion)
+		alert("WARNING: This order code was created using an older value sheet!  Pricing may have changed!");
+
+	numItems = coefArray[1] + 1;
+	
+	shoppingCart = new Array();
+
+	for(var i=0;i<numItems;i++)
+	{
+		var id = coefArray[2 + i * 3];
+		var runCount = coefArray[3 + i * 3] + 1;
+		var quantity = coefArray[4 + i * 3] + 1;
+
+		shoppingCart.push(new ShoppingCartItem(id, runCount, quantity));
+	}
+
+	updateShoppingCartTable();
+	updateShoppingCartPrices();
+}
+
+
+function formatPrice(nStr)
+{
+	nStr += '';
+	x = nStr.split('.');
+	x1 = x[0];
+	x2 = x.length > 1 ? '.' + x[1] : '';
+	var rgx = /(\d+)(\d{3})/;
+	while (rgx.test(x1)) {
+		x1 = x1.replace(rgx, '$1' + ',' + '$2');
+	}
+	return x1 + x2 + " ISK";
+}
+
+var warnings = new Object();
+
+warnings["Archon"] = "ME 9"
+warnings["Thanatos"] = "ME 9"
+warnings["Nidhoggur"] = "ME 9"
+warnings["Chimera"] = "ME 9"
+
+warnings["Apostle"] = "ME 9"
+warnings["Minokawa"] = "ME 9"
+warnings["Ninazu"] = "ME 9"
+warnings["Lif"] = "ME 9"
+
+warnings["Providence"] = "ME 9"
+warnings["Charon"] = "ME 9"
+warnings["Obelisk"] = "ME 9"
+warnings["Fenrir"] = "ME 9"
+
+warnings["Revelation"] = "ME 9"
+warnings["Naglfar"] = "ME 9"
+warnings["Moros"] = "ME 9"
+warnings["Phoenix"] = "ME 9"
+
+warnings["Rorqual"] = "ME 9"
+warnings["Orca"] = "ME 9"
+warnings["Bowhead"] = "ME 9"
+
+warnings["Capital Asymmetric Enduring Remote Shield Booster"] = "ME 9"
+warnings["Capital F-RX Compact Capacitor Booster"] = "ME 9"
+warnings["Capital I-a Enduring Armor Repairer"] = "ME 9"
+warnings["Capital Solace Scoped Remote Armor Repairer"] = "ME 9"
+warnings["Capital I-ax Enduring Remote Armor Repairer"] = "ME 9"
+
+warnings["Capital Flex Shield Hardener I"] = "ME 9"
+warnings["Capital Remote Hull Repairer I"] = "ME 9"
+warnings["Capital Hull Repairer I"] = "ME 9"
+warnings["Capital Energy Nosferatu I"] = "ME 9"
+
+warnings["Capital Remote Armor Repairer I"] = "Available February 1"
+warnings["Dual 1000mm Railgun I"] = "Available February 1"
+warnings["Quad 3500mm Siege Artillery I"] = "Available February 1"
+warnings["Quad 800mm Repeating Cannon I"] = "Available February 1"
+warnings["Rapid Torpedo Launcher I"] = "Available February 1"
+warnings["Triple Neutron Blaster Cannon I"] = "Available February 1"
+warnings["XL Cruise Missile Launcher I"] = "Available February 1"
+warnings["50000MN Microwarpdrive I"] = "Available February 1"
+warnings["Capital Armor Repairer I"] = "Available February 1"
+warnings["Capital Cap Battery I"] = "Available February 1"
+
+warnings["Capital Emergency Hull Energizer I"] = "Available February 1"
+warnings["Capital Energy Neutralizer I"] = "Available February 1"
+warnings["Capital Flex Armor Hardener I"] = "Available February 1"
+warnings["Capital Remote Capacitor Transmitter I"] = "Available February 1"
+warnings["Capital Shield Extender I"] = "Available February 1"
+warnings["Dual Giga Beam Laser I"] = "Available February 1"
+warnings["Dual Giga Pulse Laser I"] = "Available February 1"
+warnings["Heavy Warp Disruptor I"] = "Available February 1"
+warnings["Heavy Warp Scrambler I"] = "Available February 1"
+warnings["Hexa 2500mm Repeating Cannon I"] = "Available February 1"
+warnings["Quad Mega Pulse Laser I"] = "Available February 1"
+
+warnings["Networked Sensor Array"] = "Available February 1"
+
+var categoryRates = new Object();
+
+categoryRates["Frigate"] = 200000;
+categoryRates["Destroyer"] = 400000;
+categoryRates["Cruiser"] = 500000;
+categoryRates["Hauler"] = 500000;
+categoryRates["Combat Battlecruiser"] = 1000000;
+categoryRates["Attack Battlecruiser"] = 1000000;
+categoryRates["Battleship"] = 2500000;
+categoryRates["Mining Barge"] = 1000000;
+categoryRates["Dreadnought"] = 15000000;
+categoryRates["Carrier"] = 13000000;
+categoryRates["Freighter"] = 11000000;
+categoryRates["Force Auxiliary"] = 12000000;
+categoryRates["Light Fighter"] = 2000000;
+categoryRates["Support Fighter"] = 2000000;
+
+var globalMinimum = 200000;
+var totalMinimum = 3000000;
+
+var itemRates = new Object();
+
+itemRates["Orca"] = 8000000
+itemRates["Rorqual"] = 15000000
+itemRates["Noctis"] = 1000000;
+itemRates["Porpoise"] = 1000000;
+itemRates["Prototype Cloaking Device I"] = 1500000;
+itemRates["Warp Disruption Field Generator I"] = 500000;
+itemRates["Zero-Point Mass Entangler"] = 500000;
+itemRates["Bomb Launcher I"] = 300000;
+itemRates["Defender Launcher"] = 300000;
+itemRates["Heavy Stasis Grappler"] = 500000;
+itemRates["Cynosural Field Generator I"] = 300000;
+itemRates["Industrial Cynosural Field Generator"] = 300000;
+itemRates["Covert Cynosural Field Generator"] = 300000;
+itemRates["Entosis Link I"] = 800000;
+itemRates["Covert Jump Portal Generator I"] = 200000;
+itemRates["Bastion Module I"] = 500000;
+itemRates["Large Industrial Core I"] = 600000;
+itemRates["Medium Industrial Core I"] = 400000;
+
+itemRates["Mobile Large Warp Disruptor I"] = 1700000;
+itemRates["Mobile Medium Warp Disruptor I"] = 1700000;
+itemRates["Mobile Small Warp Disruptor I"] = 1600000;
+itemRates["Mobile Depot"] = 300000;
+itemRates["Mobile Tractor Unit"] = 600000;
+itemRates["Mobile Cynosural Beacon"] = 600000;
+itemRates["Mobile Cynosural Inhibitor"] = 600000;
+itemRates["Covert Mobile Cynosural Beacon"] = 600000;
+itemRates["Mobile Observatory"] = 600000;
+itemRates["Mobile Micro Jump Unit"] = 600000;
+itemRates["Mobile Scan Inhibitor"] = 600000;
+
+itemRates["Focused Warp Disruption Script"] = 450000;
+itemRates["Focused Warp Scrambling Script"] = 450000;
+itemRates["Salvage Drone I"] = 300000;
+itemRates["Mining Drone I"] = 300000;
+itemRates["Ice Harvesting Drone I"] = 1000000;
+
+itemRates["Concussion Bomb"] = 300000;
+itemRates["Scorch Bomb"] = 300000;
+itemRates["Electron Bomb"] = 300000;
+itemRates["Shrapnel Bomb"] = 300000;
+itemRates["Lockbreaker Bomb"] = 300000;
+itemRates["Void Bomb"] = 300000;
+
+itemRates["Life Support Backup Unit"] = 1500000;
+itemRates["Auto-Integrity Preservation Seal"] = 1500000;
+itemRates["Core Temperature Regulator"] = 2000000;
+itemRates["G-O Trigger Neurolink Conduit"] = 2100000;
+itemRates["R-O Trigger Neurolink Conduit"] = 2100000;
+itemRates["S-R Trigger Neurolink Conduit"] = 2100000;
+itemRates["U-C Trigger Neurolink Conduit"] = 2100000;
+
+var itemRateMaxRuns = new Object();
+
+itemRateMaxRuns["Covert Jump Portal Generator I"] = 10;
+itemRateMaxRuns["Concussion Bomb"] = 5;
+itemRateMaxRuns["Scorch Bomb"] = 5;
+itemRateMaxRuns["Electron Bomb"] = 5;
+itemRateMaxRuns["Shrapnel Bomb"] = 5;
+itemRateMaxRuns["Lockbreaker Bomb"] = 5;
+itemRateMaxRuns["Void Bomb"] = 5;
+
+function BlueprintItem(name, baseRate, maxRuns, unitsPerRun, category)
+{
+	this.name = name;
+	this.baseRate = baseRate;
+	this.maxRuns = maxRuns;
+	this.category = category;
+	this.specialType = "item";
+	this.idInc = 1;
+	this.unitsPerRun = unitsPerRun;
+}
+
+function Divider(desc)
+{
+	this.desc = desc;
+	this.specialType = "desc";
+	this.idInc = 0;
+}
+
+function ShoppingCartItem(id, runCount, quantity)
+{
+	this.id = id
+	this.runCount = runCount
+	this.quantity = quantity
+}
+
+var bpcItems = new Array(
+		new Divider("Advanced Capital Construction Components"),
+	new BlueprintItem("Capital Antimatter Reactor Unit", 6043.84219007414, 400, 1, "Advanced Capital Construction Components"),
+	new BlueprintItem("Capital Crystalline Carbonide Armor Plate", 3172.094487346, 800, 1, "Advanced Capital Construction Components"),
+	new BlueprintItem("Capital Deflection Shield Emitter", 3151.67360888717, 800, 1, "Advanced Capital Construction Components"),
+	new BlueprintItem("Capital Electrolytic Capacitor Unit", 3316.53270317394, 800, 1, "Advanced Capital Construction Components"),
+	new BlueprintItem("Capital Fernite Carbide Composite Armor Plate", 3201.86638173641, 800, 1, "Advanced Capital Construction Components"),
+	new BlueprintItem("Capital Fusion Reactor Unit", 6048.88763573946, 400, 1, "Advanced Capital Construction Components"),
+	new BlueprintItem("Capital Fusion Thruster", 3018.26693422804, 800, 1, "Advanced Capital Construction Components"),
+	new BlueprintItem("Capital Gravimetric Sensor Cluster", 3045.04391099243, 800, 1, "Advanced Capital Construction Components"),
+	new BlueprintItem("Capital Graviton Reactor Unit", 6048.07630303311, 400, 1, "Advanced Capital Construction Components"),
+	new BlueprintItem("Capital Ion Thruster", 3025.83226501754, 800, 1, "Advanced Capital Construction Components"),
+	new BlueprintItem("Capital Ladar Sensor Cluster", 3076.84368083111, 800, 1, "Advanced Capital Construction Components"),
+	new BlueprintItem("Capital Linear Shield Emitter", 3109.29093804195, 800, 1, "Advanced Capital Construction Components"),
+	new BlueprintItem("Capital Magnetometric Sensor Cluster", 3047.07178644069, 800, 1, "Advanced Capital Construction Components"),
+	new BlueprintItem("Capital Magpulse Thruster", 3024.61572227562, 800, 1, "Advanced Capital Construction Components"),
+	new BlueprintItem("Capital Nanoelectrical Microprocessor", 3101.78088449444, 800, 1, "Advanced Capital Construction Components"),
+	new BlueprintItem("Capital Nanomechanical Microprocessor", 3132.76013491759, 800, 1, "Advanced Capital Construction Components"),
+	new BlueprintItem("Capital Nuclear Reactor Unit", 6060.79907323409, 400, 1, "Advanced Capital Construction Components"),
+	new BlueprintItem("Capital Oscillator Capacitor Unit", 3296.86333173655, 800, 1, "Advanced Capital Construction Components"),
+	new BlueprintItem("Capital Photon Microprocessor", 3120.52703773162, 800, 1, "Advanced Capital Construction Components"),
+	new BlueprintItem("Capital Plasma Thruster", 3043.69272191332, 800, 1, "Advanced Capital Construction Components"),
+	new BlueprintItem("Capital Pulse Shield Emitter", 3121.90171449675, 800, 1, "Advanced Capital Construction Components"),
+	new BlueprintItem("Capital Quantum Microprocessor", 3113.94949515116, 800, 1, "Advanced Capital Construction Components"),
+	new BlueprintItem("Capital Radar Sensor Cluster", 3034.46100998589, 800, 1, "Advanced Capital Construction Components"),
+	new BlueprintItem("Capital Scalar Capacitor Unit", 3289.77927661165, 800, 1, "Advanced Capital Construction Components"),
+	new BlueprintItem("Capital Sustained Shield Emitter", 3119.87383904849, 800, 1, "Advanced Capital Construction Components"),
+	new BlueprintItem("Capital Tesseract Capacitor Unit", 3274.96732209415, 800, 1, "Advanced Capital Construction Components"),
+	new BlueprintItem("Capital Titanium Diborite Armor Plate", 3170.06661189774, 800, 1, "Advanced Capital Construction Components"),
+	new BlueprintItem("Capital Tungsten Carbide Armor Plate", 3159.48371089119, 800, 1, "Advanced Capital Construction Components"),
+	new BlueprintItem("Gravimetric-FTL Interlink Communicator", 140748.851347668, 40, 1, "Advanced Capital Construction Components"),
+	new BlueprintItem("Ladar-FTL Interlink Communicator", 140605.439572913, 40, 1, "Advanced Capital Construction Components"),
+	new BlueprintItem("Magnetometric-FTL Interlink Communicator", 140923.046379803, 40, 1, "Advanced Capital Construction Components"),
+	new BlueprintItem("Radar-FTL Interlink Communicator", 140595.153505424, 40, 1, "Advanced Capital Construction Components"),
+	new Divider("Armor Coating"),
+	new BlueprintItem("EM Coating I", 3502.54526244154, 200, 1, "Armor Coating"),
+	new BlueprintItem("Explosive Coating I", 3502.54526244154, 200, 1, "Armor Coating"),
+	new BlueprintItem("Kinetic Coating I", 3502.54526244154, 200, 1, "Armor Coating"),
+	new BlueprintItem("Multispectrum Coating I", 3503.81137606421, 200, 1, "Armor Coating"),
+	new BlueprintItem("Thermal Coating I", 3502.54526244154, 200, 1, "Armor Coating"),
+	new Divider("Armor Command Burst Charges"),
+	new BlueprintItem("Armor Energizing Charge", 3571.47373843056, 200, 500, "Armor Command Burst Charges"),
+	new BlueprintItem("Armor Reinforcement Charge", 3571.47373843056, 200, 500, "Armor Command Burst Charges"),
+	new BlueprintItem("Rapid Repair Charge", 3571.47373843056, 200, 500, "Armor Command Burst Charges"),
+	new Divider("Armor Hardener"),
+	new BlueprintItem("EM Armor Hardener I", 3541.45884869663, 200, 1, "Armor Hardener"),
+	new BlueprintItem("Explosive Armor Hardener I", 3553.12504156272, 200, 1, "Armor Hardener"),
+	new BlueprintItem("Kinetic Armor Hardener I", 3548.21042635791, 200, 1, "Armor Hardener"),
+	new BlueprintItem("Thermal Armor Hardener I", 3560.17992311094, 200, 1, "Armor Hardener"),
+	new Divider("Armor Plate"),
+	new BlueprintItem("100mm Steel Plates I", 3508.17160842992, 200, 1, "Armor Plate"),
+	new BlueprintItem("1600mm Steel Plates I", 10835.1424659684, 60, 1, "Armor Plate"),
+	new BlueprintItem("200mm Steel Plates I", 3534.68195293588, 200, 1, "Armor Plate"),
+	new BlueprintItem("25000mm Steel Plates I", 149503.295700164, 5, 1, "Armor Plate"),
+	new BlueprintItem("400mm Steel Plates I", 3572.56473638097, 200, 1, "Armor Plate"),
+	new BlueprintItem("800mm Steel Plates I", 7186.129842479, 100, 1, "Armor Plate"),
+	new Divider("Armor Repair Unit"),
+	new BlueprintItem("Capital Armor Repairer I", 161583.07231841, 5, 1, "Armor Repair Unit"),
+	new BlueprintItem("Capital I-a Enduring Armor Repairer", 175907.12446112, 5, 1, "Armor Repair Unit"),
+	new BlueprintItem("Large Armor Repairer I", 10543.0624940058, 60, 1, "Armor Repair Unit"),
+	new BlueprintItem("Medium Armor Repairer I", 7020.80495352414, 100, 1, "Armor Repair Unit"),
+	new BlueprintItem("Small Armor Repairer I", 3504.91221949548, 200, 1, "Armor Repair Unit"),
+	new Divider("Attack Battlecruiser"),
+	new BlueprintItem("Naga", 92635.3055349443, 10, 1, "Attack Battlecruiser"),
+	new BlueprintItem("Oracle", 92925.5536459268, 10, 1, "Attack Battlecruiser"),
+	new BlueprintItem("Talos", 93649.1612204933, 10, 1, "Attack Battlecruiser"),
+	new BlueprintItem("Tornado", 91965.9281230048, 10, 1, "Attack Battlecruiser"),
+	new Divider("Audit Log Secure Container"),
+	new BlueprintItem("Large Audit Log Secure Container", 3669.92416440648, 200, 1, "Audit Log Secure Container"),
+	new BlueprintItem("Medium Audit Log Secure Container", 2417.10118182266, 300, 1, "Audit Log Secure Container"),
+	new BlueprintItem("Small Audit Log Secure Container", 1197.55554369748, 600, 1, "Audit Log Secure Container"),
+	new BlueprintItem("Station Container", 5838.94991674174, 100, 1, "Audit Log Secure Container"),
+	new BlueprintItem("Station Vault Container", 5886.79242358965, 100, 1, "Audit Log Secure Container"),
+	new BlueprintItem("Station Warehouse Container", 6302.35040863652, 100, 1, "Audit Log Secure Container"),
+	new Divider("Auto-Targeting Cruise Missile"),
+	new BlueprintItem("Inferno Auto-Targeting Cruise Missile I", 3517.91120908343, 200, 100, "Auto-Targeting Cruise Missile"),
+	new BlueprintItem("Mjolnir Auto-Targeting Cruise Missile I", 3522.42004666656, 200, 100, "Auto-Targeting Cruise Missile"),
+	new BlueprintItem("Nova Auto-Targeting Cruise Missile I", 3511.65741764688, 200, 100, "Auto-Targeting Cruise Missile"),
+	new BlueprintItem("Scourge Auto-Targeting Cruise Missile I", 3513.96595461463, 200, 100, "Auto-Targeting Cruise Missile"),
+	new Divider("Auto-Targeting Heavy Missile"),
+	new BlueprintItem("Inferno Auto-Targeting Heavy Missile I", 2336.83853304743, 300, 100, "Auto-Targeting Heavy Missile"),
+	new BlueprintItem("Mjolnir Auto-Targeting Heavy Missile I", 2337.16855108599, 300, 100, "Auto-Targeting Heavy Missile"),
+	new BlueprintItem("Nova Auto-Targeting Heavy Missile I", 2336.06632371755, 300, 100, "Auto-Targeting Heavy Missile"),
+	new BlueprintItem("Scourge Auto-Targeting Heavy Missile I", 2336.59050926106, 300, 100, "Auto-Targeting Heavy Missile"),
+	new Divider("Auto-Targeting Light Missile"),
+	new BlueprintItem("Inferno Auto-Targeting Light Missile I", 1167.18067278911, 600, 100, "Auto-Targeting Light Missile"),
+	new BlueprintItem("Mjolnir Auto-Targeting Light Missile I", 1167.30879636716, 600, 100, "Auto-Targeting Light Missile"),
+	new BlueprintItem("Nova Auto-Targeting Light Missile I", 1167.06037682542, 600, 100, "Auto-Targeting Light Missile"),
+	new BlueprintItem("Scourge Auto-Targeting Light Missile I", 1167.12137184513, 600, 100, "Auto-Targeting Light Missile"),
+	new Divider("Automated Targeting System"),
+	new BlueprintItem("Auto Targeting System I", 10501.6596006777, 60, 1, "Automated Targeting System"),
+	new Divider("Auxiliary Power Core"),
+	new BlueprintItem("Micro Auxiliary Power Core I", 3567.5323449051, 200, 1, "Auxiliary Power Core"),
+	new Divider("Ballistic Control system"),
+	new BlueprintItem("Ballistic Control System I", 3516.46295078982, 200, 1, "Ballistic Control system"),
+	new Divider("Battleship"),
+	new BlueprintItem("Abaddon", 178469.225341323, 10, 1, "Battleship"),
+	new BlueprintItem("Apocalypse", 161437.917597834, 10, 1, "Battleship"),
+	new BlueprintItem("Armageddon", 171061.232632159, 10, 1, "Battleship"),
+	new BlueprintItem("Dominix", 174068.484774181, 10, 1, "Battleship"),
+	new BlueprintItem("Hyperion", 177215.482993333, 10, 1, "Battleship"),
+	new BlueprintItem("Maelstrom", 167396.2409244, 10, 1, "Battleship"),
+	new BlueprintItem("Megathron", 160951.140606619, 10, 1, "Battleship"),
+	new BlueprintItem("Raven", 157199.166557207, 10, 1, "Battleship"),
+	new BlueprintItem("Rokh", 173752.759337984, 10, 1, "Battleship"),
+	new BlueprintItem("Scorpion", 143795.391522395, 10, 1, "Battleship"),
+	new BlueprintItem("Tempest", 154566.787036987, 10, 1, "Battleship"),
+	new BlueprintItem("Typhoon", 151914.350183399, 10, 1, "Battleship"),
+	new Divider("Bomb"),
+	new BlueprintItem("Concussion Bomb", 9296.44066010415, 300, 20, "Bomb"),
+	new BlueprintItem("Electron Bomb", 9095.63773215513, 300, 20, "Bomb"),
+	new BlueprintItem("Scorch Bomb", 9297.25960230633, 300, 20, "Bomb"),
+	new BlueprintItem("Shrapnel Bomb", 9214.76640516509, 300, 20, "Bomb"),
+	new Divider("Bomb ECM"),
+	new BlueprintItem("Lockbreaker Bomb", 7825.91130475662, 300, 20, "Bomb ECM"),
+	new Divider("Bomb Energy"),
+	new BlueprintItem("Void Bomb", 7825.91130475662, 300, 20, "Bomb Energy"),
+	new Divider("Burst Jammer"),
+	new BlueprintItem("Burst Jammer I", 7012.82223213265, 100, 1, "Burst Jammer"),
+	new Divider("CPU Enhancer"),
+	new BlueprintItem("Co-Processor I", 3507.85904766951, 200, 1, "CPU Enhancer"),
+	new Divider("Capacitor Battery"),
+	new BlueprintItem("Capital Cap Battery I", 143183.127132156, 10, 1, "Capacitor Battery"),
+	new BlueprintItem("Large Cap Battery I", 7032.05386748534, 100, 1, "Capacitor Battery"),
+	new BlueprintItem("Medium Cap Battery I", 7013.01200580133, 100, 1, "Capacitor Battery"),
+	new BlueprintItem("Small Cap Battery I", 3504.80418709146, 200, 1, "Capacitor Battery"),
+	new Divider("Capacitor Booster"),
+	new BlueprintItem("Capital Capacitor Booster I", 151876.275223838, 5, 1, "Capacitor Booster"),
+	new BlueprintItem("Capital F-RX Compact Capacitor Booster", 181502.573498974, 5, 1, "Capacitor Booster"),
+	new BlueprintItem("Heavy Capacitor Booster I", 10529.9491160234, 60, 1, "Capacitor Booster"),
+	new BlueprintItem("Medium Capacitor Booster I", 7011.46748104911, 100, 1, "Capacitor Booster"),
+	new BlueprintItem("Small Capacitor Booster I", 3503.03513423656, 200, 1, "Capacitor Booster"),
+	new Divider("Capacitor Booster Charge"),
+	new BlueprintItem("Cap Booster 100", 1170.84903501144, 600, 10, "Capacitor Booster Charge"),
+	new BlueprintItem("Cap Booster 150", 2342.81607428033, 300, 10, "Capacitor Booster Charge"),
+	new BlueprintItem("Cap Booster 200", 2346.74053307932, 300, 10, "Capacitor Booster Charge"),
+	new BlueprintItem("Cap Booster 25", 1167.31043889152, 600, 10, "Capacitor Booster Charge"),
+	new BlueprintItem("Cap Booster 3200", 3574.45619041646, 200, 10, "Capacitor Booster Charge"),
+	new BlueprintItem("Cap Booster 400", 3523.09966647463, 200, 10, "Capacitor Booster Charge"),
+	new BlueprintItem("Cap Booster 50", 1168.16790547169, 600, 10, "Capacitor Booster Charge"),
+	new BlueprintItem("Cap Booster 75", 1169.51027123047, 600, 10, "Capacitor Booster Charge"),
+	new BlueprintItem("Cap Booster 800", 3528.67724443214, 200, 10, "Capacitor Booster Charge"),
+	new Divider("Capacitor Flux Coil"),
+	new BlueprintItem("Capacitor Flux Coil I", 3502.05462846722, 200, 1, "Capacitor Flux Coil"),
+	new Divider("Capacitor Power Relay"),
+	new BlueprintItem("Capacitor Power Relay I", 3504.8419840734, 200, 1, "Capacitor Power Relay"),
+	new Divider("Capacitor Recharger"),
+	new BlueprintItem("Cap Recharger I", 7009.95696778606, 100, 1, "Capacitor Recharger"),
+	new Divider("Capital Construction Components"),
+	new BlueprintItem("Capital Armor Plates", 107545.599685135, 40, 1, "Capital Construction Components"),
+	new BlueprintItem("Capital Capacitor Battery", 102566.075816344, 40, 1, "Capital Construction Components"),
+	new BlueprintItem("Capital Cargo Bay", 92983.8411022351, 40, 1, "Capital Construction Components"),
+	new BlueprintItem("Capital Clone Vat Bay", 120966.360463825, 40, 1, "Capital Construction Components"),
+	new BlueprintItem("Capital Computer System", 104903.294036966, 40, 1, "Capital Construction Components"),
+	new BlueprintItem("Capital Construction Parts", 97480.3064436771, 40, 1, "Capital Construction Components"),
+	new BlueprintItem("Capital Core Temperature Regulator", 192441.434709915, 40, 1, "Capital Construction Components"),
+	new BlueprintItem("Capital Corporate Hangar Bay", 118151.609648252, 40, 1, "Capital Construction Components"),
+	new BlueprintItem("Capital Drone Bay", 93625.5497452421, 40, 1, "Capital Construction Components"),
+	new BlueprintItem("Capital Jump Bridge Array", 165191.45715429, 40, 1, "Capital Construction Components"),
+	new BlueprintItem("Capital Jump Drive", 118432.103384003, 40, 1, "Capital Construction Components"),
+	new BlueprintItem("Capital Launcher Hardpoint", 108890.232769704, 40, 1, "Capital Construction Components"),
+	new BlueprintItem("Capital Power Generator", 109171.329615116, 40, 1, "Capital Construction Components"),
+	new BlueprintItem("Capital Propulsion Engine", 105720.486725776, 40, 1, "Capital Construction Components"),
+	new BlueprintItem("Capital Sensor Cluster", 104272.758859088, 40, 1, "Capital Construction Components"),
+	new BlueprintItem("Capital Shield Emitter", 107358.969302966, 40, 1, "Capital Construction Components"),
+	new BlueprintItem("Capital Ship Maintenance Bay", 119061.339741772, 40, 1, "Capital Construction Components"),
+	new BlueprintItem("Capital Siege Array", 113150.7342884, 40, 1, "Capital Construction Components"),
+	new BlueprintItem("Capital Turret Hardpoint", 110862.149245877, 40, 1, "Capital Construction Components"),
+	new BlueprintItem("Neurolink Protection Cell", 244080.696355236, 20, 1, "Capital Construction Components"),
+	new Divider("Capital Industrial Ship"),
+	new BlueprintItem("Rorqual", 19765631.3082696, 1, 1, "Capital Industrial Ship"),
+	new Divider("Capital Sensor Array"),
+	new BlueprintItem("Networked Sensor Array", 227236.541123909, 5, 1, "Capital Sensor Array"),
+	new Divider("Cargo Container"),
+	new BlueprintItem("Large Standard Container", 3506.96477787464, 200, 1, "Cargo Container"),
+	new BlueprintItem("Medium Standard Container", 2336.32964281933, 300, 1, "Cargo Container"),
+	new BlueprintItem("Small Standard Container", 1167.65982635693, 600, 1, "Cargo Container"),
+	new Divider("Cargo Scanner"),
+	new BlueprintItem("Cargo Scanner I", 7001.06316139935, 100, 1, "Cargo Scanner"),
+	new Divider("Carrier"),
+	new BlueprintItem("Archon", 12613811.936554, 1, 1, "Carrier"),
+	new BlueprintItem("Chimera", 12432751.1330908, 1, 1, "Carrier"),
+	new BlueprintItem("Nidhoggur", 12800194.0440146, 1, 1, "Carrier"),
+	new BlueprintItem("Thanatos", 13159504.2546776, 1, 1, "Carrier"),
+	new Divider("Cloaking Device"),
+	new BlueprintItem("Prototype Cloaking Device I", 46120.8433655971, 40, 1, "Cloaking Device"),
+	new Divider("Combat Battlecruiser"),
+	new BlueprintItem("Brutix", 87988.0685919939, 10, 1, "Combat Battlecruiser"),
+	new BlueprintItem("Cyclone", 86665.5688117322, 10, 1, "Combat Battlecruiser"),
+	new BlueprintItem("Drake", 88280.5120230811, 10, 1, "Combat Battlecruiser"),
+	new BlueprintItem("Ferox", 87107.6163032513, 10, 1, "Combat Battlecruiser"),
+	new BlueprintItem("Harbinger", 88426.5442173886, 10, 1, "Combat Battlecruiser"),
+	new BlueprintItem("Hurricane", 87841.6549224965, 10, 1, "Combat Battlecruiser"),
+	new BlueprintItem("Myrmidon", 88863.8968574216, 10, 1, "Combat Battlecruiser"),
+	new BlueprintItem("Prophecy", 87548.4374235249, 10, 1, "Combat Battlecruiser"),
+	new Divider("Combat Drone"),
+	new BlueprintItem("Acolyte I", 1167.94195186865, 600, 1, "Combat Drone"),
+	new BlueprintItem("Berserker I", 3529.36777767334, 200, 1, "Combat Drone"),
+	new BlueprintItem("Bouncer I", 3579.35007413664, 200, 1, "Combat Drone"),
+	new BlueprintItem("Curator I", 3579.35007413664, 200, 1, "Combat Drone"),
+	new BlueprintItem("Garde I", 3579.35007413664, 200, 1, "Combat Drone"),
+	new BlueprintItem("Hammerhead I", 2345.49389160951, 300, 1, "Combat Drone"),
+	new BlueprintItem("Hobgoblin I", 1168.13522718821, 600, 1, "Combat Drone"),
+	new BlueprintItem("Hornet I", 1168.41215548525, 600, 1, "Combat Drone"),
+	new BlueprintItem("Infiltrator I", 2345.3275008202, 300, 1, "Combat Drone"),
+	new BlueprintItem("Ogre I", 3540.55059961206, 200, 1, "Combat Drone"),
+	new BlueprintItem("Praetor I", 3540.8457535586, 200, 1, "Combat Drone"),
+	new BlueprintItem("Valkyrie I", 2344.1578255269, 300, 1, "Combat Drone"),
+	new BlueprintItem("Vespa I", 2344.02853755851, 300, 1, "Combat Drone"),
+	new BlueprintItem("Warden I", 3579.35007413664, 200, 1, "Combat Drone"),
+	new BlueprintItem("Warrior I", 1169.19764371622, 600, 1, "Combat Drone"),
+	new BlueprintItem("Wasp I", 3534.91161656619, 200, 1, "Combat Drone"),
+	new Divider("Command Burst"),
+	new BlueprintItem("Armor Command Burst I", 14119.4990905732, 50, 1, "Command Burst"),
+	new BlueprintItem("Information Command Burst I", 14119.4990905732, 50, 1, "Command Burst"),
+	new BlueprintItem("Mining Foreman Burst I", 14119.4990905732, 50, 1, "Command Burst"),
+	new BlueprintItem("Shield Command Burst I", 14119.4990905732, 50, 1, "Command Burst"),
+	new BlueprintItem("Skirmish Command Burst I", 14119.4990905732, 50, 1, "Command Burst"),
+	new Divider("Compressors"),
+	new BlueprintItem("Capital Asteroid Ore Compressor I", 101565.483155391, 8, 1, "Compressors"),
+	new BlueprintItem("Capital Gas Compressor I", 162693.898860901, 8, 1, "Compressors"),
+	new BlueprintItem("Capital Ice Compressor I", 124886.705585945, 8, 1, "Compressors"),
+	new BlueprintItem("Capital Mercoxit Compressor I", 144176.87060559, 8, 1, "Compressors"),
+	new BlueprintItem("Capital Moon Ore Compressor I", 162693.898860901, 8, 1, "Compressors"),
+	new BlueprintItem("Large Asteroid Ore Compressor I", 93202.880890954, 8, 1, "Compressors"),
+	new BlueprintItem("Large Gas Compressor I", 124886.705585945, 8, 1, "Compressors"),
+	new BlueprintItem("Large Ice Compressor I", 105446.57714039, 8, 1, "Compressors"),
+	new BlueprintItem("Large Mercoxit Compressor I", 115535.725968005, 8, 1, "Compressors"),
+	new BlueprintItem("Large Moon Ore Compressor I", 125242.884494544, 8, 1, "Compressors"),
+	new BlueprintItem("Medium Asteroid Ore Compressor I", 88812.5043213748, 8, 1, "Compressors"),
+	new BlueprintItem("Medium Gas Compressor I", 105446.57714039, 8, 1, "Compressors"),
+	new Divider("Construction Components"),
+	new BlueprintItem("Antimatter Reactor Unit", 1183.15222676926, 2000, 1, "Construction Components"),
+	new BlueprintItem("Auto-Integrity Preservation Seal", 7719.80687742555, 200, 3, "Construction Components"),
+	new BlueprintItem("Core Temperature Regulator", 47505.8891288485, 40, 1, "Construction Components"),
+	new BlueprintItem("Crystalline Carbonide Armor Plate", 99.8879339552566, 20000, 1, "Construction Components"),
+	new BlueprintItem("Deflection Shield Emitter", 589.983512224378, 4000, 1, "Construction Components"),
+	new BlueprintItem("EM Pulse Generator", 591.1113584404, 4000, 1, "Construction Components"),
+	new BlueprintItem("Electrolytic Capacitor Unit", 596.351599452023, 4000, 1, "Construction Components"),
+	new BlueprintItem("Fernite Carbide Composite Armor Plate", 100.477476418433, 20000, 1, "Construction Components"),
+	new BlueprintItem("Fusion Reactor Unit", 1183.20330552178, 2000, 1, "Construction Components"),
+	new BlueprintItem("Fusion Thruster", 589.740979023094, 4000, 1, "Construction Components"),
+	new BlueprintItem("G-O Trigger Neurolink Conduit", 10419.24537427, 200, 1, "Construction Components"),
+	new BlueprintItem("Genetic Lock Preserver", 137532.901777052, 40, 20, "Construction Components"),
+	new BlueprintItem("Genetic Mutation Inhibitor", 132695.668869006, 40, 20, "Construction Components"),
+	new BlueprintItem("Genetic Safeguard Filter", 440043.995235822, 10, 20, "Construction Components"),
+	new BlueprintItem("Genetic Structure Repairer", 138251.172203819, 40, 20, "Construction Components"),
+	new BlueprintItem("Gravimetric Sensor Cluster", 589.82446344186, 4000, 1, "Construction Components"),
+	new BlueprintItem("Graviton Pulse Generator", 591.216139638485, 4000, 1, "Construction Components"),
+	new BlueprintItem("Graviton Reactor Unit", 1183.19509180484, 2000, 1, "Construction Components"),
+	new BlueprintItem("Ion Thruster", 589.814759443397, 4000, 1, "Construction Components"),
+	new BlueprintItem("Ladar Sensor Cluster", 590.139312648184, 4000, 1, "Construction Components"),
+	new BlueprintItem("Laser Focusing Crystals", 589.720131842549, 4000, 1, "Construction Components"),
+	new BlueprintItem("Life Support Backup Unit", 7751.73777194919, 200, 3, "Construction Components"),
+	new BlueprintItem("Linear Shield Emitter", 589.56388181997, 4000, 1, "Construction Components"),
+	new BlueprintItem("Magnetometric Sensor Cluster", 589.844541416596, 4000, 1, "Construction Components"),
+	new BlueprintItem("Magpulse Thruster", 589.802895185599, 4000, 1, "Construction Components"),
+	new BlueprintItem("Nanoelectrical Microprocessor", 304.187281021701, 8000, 1, "Construction Components"),
+	new BlueprintItem("Nanomechanical Microprocessor", 304.437241810071, 8000, 1, "Construction Components"),
+	new BlueprintItem("Neurolink Enhancer Reservoir", 115922.813080421, 40, 1, "Construction Components"),
+	new BlueprintItem("Nuclear Pulse Generator", 591.530988844809, 4000, 1, "Construction Components"),
+	new BlueprintItem("Nuclear Reactor Unit", 1183.32389375289, 2000, 1, "Construction Components"),
+	new BlueprintItem("Oscillator Capacitor Unit", 596.908245936257, 4000, 1, "Construction Components"),
+	new BlueprintItem("Particle Accelerator Unit", 589.896069767887, 4000, 1, "Construction Components"),
+	new BlueprintItem("Photon Microprocessor", 305.127875217754, 8000, 1, "Construction Components"),
+	new BlueprintItem("Plasma Pulse Generator", 591.23621761322, 4000, 1, "Construction Components"),
+	new BlueprintItem("Plasma Thruster", 589.988942443881, 4000, 1, "Construction Components"),
+	new BlueprintItem("Programmable Purification Membrane", 58503.1467446057, 40, 1, "Construction Components"),
+	new BlueprintItem("Pulse Shield Emitter", 589.68874099279, 4000, 1, "Construction Components"),
+	new BlueprintItem("Quantum Microprocessor", 304.652707721217, 8000, 1, "Construction Components"),
+	new BlueprintItem("R-O Trigger Neurolink Conduit", 10903.9618205213, 200, 1, "Construction Components"),
+	new BlueprintItem("Radar Sensor Cluster", 589.719682243776, 4000, 1, "Construction Components"),
+	new BlueprintItem("S-R Trigger Neurolink Conduit", 10971.0469337617, 200, 1, "Construction Components"),
+	new BlueprintItem("Scalar Capacitor Unit", 596.423952087567, 4000, 1, "Construction Components"),
+	new BlueprintItem("Superconductor Rails", 589.867778076214, 4000, 1, "Construction Components"),
+	new BlueprintItem("Sustained Shield Emitter", 589.668663018055, 4000, 1, "Construction Components"),
+	new BlueprintItem("Tesseract Capacitor Unit", 595.910897570741, 4000, 1, "Construction Components"),
+	new BlueprintItem("Thermonuclear Trigger Unit", 590.311429230579, 4000, 1, "Construction Components"),
+	new BlueprintItem("Titanium Diborite Armor Plate", 99.8477780057861, 20000, 1, "Construction Components"),
+	new BlueprintItem("Tungsten Carbide Armor Plate", 99.6382156096169, 20000, 1, "Construction Components"),
+	new BlueprintItem("U-C Trigger Neurolink Conduit", 11165.6877340555, 200, 1, "Construction Components"),
+	new Divider("Covert Jump Portal Generator"),
+	new BlueprintItem("Covert Jump Portal Generator I", 21814.1569459098, 50, 1, "Covert Jump Portal Generator"),
+	new Divider("Cruise Missile"),
+	new BlueprintItem("Inferno Cruise Missile", 3517.91120908343, 200, 100, "Cruise Missile"),
+	new BlueprintItem("Mjolnir Cruise Missile", 3522.42004666656, 200, 100, "Cruise Missile"),
+	new BlueprintItem("Nova Cruise Missile", 3511.65741764688, 200, 100, "Cruise Missile"),
+	new BlueprintItem("Scourge Cruise Missile", 3513.96595461463, 200, 100, "Cruise Missile"),
+	new Divider("Cruiser"),
+	new BlueprintItem("Arbitrator", 50983.9350759457, 10, 1, "Cruiser"),
+	new BlueprintItem("Augoror", 50955.4828660048, 10, 1, "Cruiser"),
+	new BlueprintItem("Bellicose", 51540.6121967419, 10, 1, "Cruiser"),
+	new BlueprintItem("Blackbird", 50976.8253027315, 10, 1, "Cruiser"),
+	new BlueprintItem("Caracal", 51583.2643727903, 10, 1, "Cruiser"),
+	new BlueprintItem("Celestis", 50969.7133482672, 10, 1, "Cruiser"),
+	new BlueprintItem("Exequror", 50941.2435695106, 10, 1, "Cruiser"),
+	new BlueprintItem("Maller", 51618.7485988473, 10, 1, "Cruiser"),
+	new BlueprintItem("Moa", 51611.6560154124, 10, 1, "Cruiser"),
+	new BlueprintItem("Omen", 51590.3654939009, 10, 1, "Cruiser"),
+	new BlueprintItem("Osprey", 50948.364323295, 10, 1, "Cruiser"),
+	new BlueprintItem("Rupture", 51597.4644699782, 10, 1, "Cruiser"),
+	new BlueprintItem("Scythe", 50934.1205970735, 10, 1, "Cruiser"),
+	new BlueprintItem("Stabber", 51569.0556668191, 10, 1, "Cruiser"),
+	new BlueprintItem("Thorax", 51576.1610994954, 10, 1, "Cruiser"),
+	new BlueprintItem("Vexor", 51604.5613081283, 10, 1, "Cruiser"),
+	new Divider("Cynosural Field Generator"),
+	new BlueprintItem("Covert Cynosural Field Generator I", 15729.7987767777, 50, 1, "Cynosural Field Generator"),
+	new BlueprintItem("Cynosural Field Generator I", 14888.6354682971, 50, 1, "Cynosural Field Generator"),
+	new BlueprintItem("Industrial Cynosural Field Generator", 15178.8260028186, 50, 1, "Cynosural Field Generator"),
+	new Divider("Damage Control"),
+	new BlueprintItem("Assault Damage Control I", 3503.59652595625, 200, 1, "Damage Control"),
+	new BlueprintItem("Capital Emergency Hull Energizer I", 156457.838959735, 5, 1, "Damage Control"),
+	new BlueprintItem("Damage Control I", 3502.1891248524, 200, 1, "Damage Control"),
+	new Divider("Data Miners"),
+	new BlueprintItem("Data Analyzer I", 7012.26893123993, 100, 1, "Data Miners"),
+	new BlueprintItem("Relic Analyzer I", 7012.26893123993, 100, 1, "Data Miners"),
+	new Divider("Defender Missiles"),
+	new BlueprintItem("Defender Missile I", 1167.01144323607, 600, 100, "Defender Missiles"),
+	new Divider("Destroyer"),
+	new BlueprintItem("Algos", 35474.7545752432, 20, 1, "Destroyer"),
+	new BlueprintItem("Catalyst", 35465.2119110182, 20, 1, "Destroyer"),
+	new BlueprintItem("Coercer", 35485.2587520659, 20, 1, "Destroyer"),
+	new BlueprintItem("Corax", 35489.5243048855, 20, 1, "Destroyer"),
+	new BlueprintItem("Cormorant", 35479.4079729158, 20, 1, "Destroyer"),
+	new BlueprintItem("Dragoon", 35495.6114947666, 20, 1, "Destroyer"),
+	new BlueprintItem("Talwar", 35463.8561895429, 20, 1, "Destroyer"),
+	new BlueprintItem("Thrasher", 35454.7368270639, 20, 1, "Destroyer"),
+	new Divider("Dreadnought"),
+	new BlueprintItem("Moros", 15454017.0771093, 1, 1, "Dreadnought"),
+	new BlueprintItem("Naglfar", 15280281.1440241, 1, 1, "Dreadnought"),
+	new BlueprintItem("Phoenix", 15621058.9839459, 1, 1, "Dreadnought"),
+	new BlueprintItem("Revelation", 15797982.7467503, 1, 1, "Dreadnought"),
+	new Divider("Drone Control Range Module"),
+	new BlueprintItem("Drone Link Augmentor I", 10570.8907389197, 60, 1, "Drone Control Range Module"),
+	new Divider("Drone Damage Modules"),
+	new BlueprintItem("Drone Damage Amplifier I", 3513.4780263057, 200, 1, "Drone Damage Modules"),
+	new Divider("Drone Navigation Computer"),
+	new BlueprintItem("Drone Navigation Computer I", 7070.09326001144, 100, 1, "Drone Navigation Computer"),
+	new Divider("Drone Tracking Enhancer"),
+	new BlueprintItem("Omnidirectional Tracking Enhancer I", 3506.78664145848, 200, 1, "Drone Tracking Enhancer"),
+	new Divider("Drone Tracking Modules"),
+	new BlueprintItem("Omnidirectional Tracking Link I", 7002.86522625242, 100, 1, "Drone Tracking Modules"),
+	new Divider("ECM"),
+	new BlueprintItem("Gravimetric ECM I", 7008.97531665682, 100, 1, "ECM"),
+	new BlueprintItem("Ladar ECM I", 7008.97531665682, 100, 1, "ECM"),
+	new BlueprintItem("Magnetometric ECM I", 7008.97531665682, 100, 1, "ECM"),
+	new BlueprintItem("Multispectral ECM I", 7013.14706378345, 100, 1, "ECM"),
+	new BlueprintItem("Radar ECM I", 7008.97531665682, 100, 1, "ECM"),
+	new Divider("ECM Stabilizer"),
+	new BlueprintItem("Signal Distortion Amplifier I", 3508.0991620012, 200, 1, "ECM Stabilizer"),
+	new Divider("Electronic Warfare Drone"),
+	new BlueprintItem("Acolyte TD-300", 1167.94195186865, 600, 1, "Electronic Warfare Drone"),
+	new BlueprintItem("Berserker TP-900", 3529.36777767334, 200, 1, "Electronic Warfare Drone"),
+	new BlueprintItem("Hammerhead SD-600", 2345.49389160951, 300, 1, "Electronic Warfare Drone"),
+	new BlueprintItem("Hobgoblin SD-300", 1168.13522718821, 600, 1, "Electronic Warfare Drone"),
+	new BlueprintItem("Hornet EC-300", 1168.41215548525, 600, 1, "Electronic Warfare Drone"),
+	new BlueprintItem("Infiltrator TD-600", 2345.3275008202, 300, 1, "Electronic Warfare Drone"),
+	new BlueprintItem("Ogre SD-900", 3540.55059961206, 200, 1, "Electronic Warfare Drone"),
+	new BlueprintItem("Praetor TD-900", 3540.8457535586, 200, 1, "Electronic Warfare Drone"),
+	new BlueprintItem("Valkyrie TP-600", 2344.1578255269, 300, 1, "Electronic Warfare Drone"),
+	new BlueprintItem("Vespa EC-600", 2344.02853755851, 300, 1, "Electronic Warfare Drone"),
+	new BlueprintItem("Warrior TP-300", 1169.19764371622, 600, 1, "Electronic Warfare Drone"),
+	new BlueprintItem("Wasp EC-900", 3534.91161656619, 200, 1, "Electronic Warfare Drone"),
+	new Divider("Energized Armor Membrane"),
+	new BlueprintItem("EM Energized Membrane I", 3535.67393109281, 200, 1, "Energized Armor Membrane"),
+	new BlueprintItem("Explosive Energized Membrane I", 3535.67393109281, 200, 1, "Energized Armor Membrane"),
+	new BlueprintItem("Kinetic Energized Membrane I", 3535.67393109281, 200, 1, "Energized Armor Membrane"),
+	new BlueprintItem("Layered Energized Membrane I", 3535.67393109281, 200, 1, "Energized Armor Membrane"),
+	new BlueprintItem("Multispectrum Energized Membrane I", 3545.06366477451, 200, 1, "Energized Armor Membrane"),
+	new BlueprintItem("Thermal Energized Membrane I", 3535.67393109281, 200, 1, "Energized Armor Membrane"),
+	new Divider("Energy Neutralizer"),
+	new BlueprintItem("Capital Energy Neutralizer I", 148455.276482577, 5, 1, "Energy Neutralizer"),
+	new BlueprintItem("Heavy Energy Neutralizer I", 10658.8660928984, 60, 1, "Energy Neutralizer"),
+	new BlueprintItem("Medium Energy Neutralizer I", 7031.49187517245, 100, 1, "Energy Neutralizer"),
+	new BlueprintItem("Small Energy Neutralizer I", 3508.17456015497, 200, 1, "Energy Neutralizer"),
+	new Divider("Energy Neutralizer Drone"),
+	new BlueprintItem("Acolyte EV-300", 1167.94195186865, 600, 1, "Energy Neutralizer Drone"),
+	new BlueprintItem("Infiltrator EV-600", 2345.3275008202, 300, 1, "Energy Neutralizer Drone"),
+	new BlueprintItem("Praetor EV-900", 3540.8457535586, 200, 1, "Energy Neutralizer Drone"),
+	new Divider("Energy Nosferatu"),
+	new BlueprintItem("Capital Energy Nosferatu I", 150600.45298891, 5, 1, "Energy Nosferatu"),
+	new BlueprintItem("Heavy Energy Nosferatu I", 10800.5121175186, 60, 1, "Energy Nosferatu"),
+	new BlueprintItem("Medium Energy Nosferatu I", 7061.1972594002, 100, 1, "Energy Nosferatu"),
+	new BlueprintItem("Small Energy Nosferatu I", 3513.75271636855, 200, 1, "Energy Nosferatu"),
+	new Divider("Energy Weapon"),
+	new BlueprintItem("Dual Giga Beam Laser I", 162194.652107765, 5, 1, "Energy Weapon"),
+	new BlueprintItem("Dual Giga Pulse Laser I", 159275.506826353, 5, 1, "Energy Weapon"),
+	new BlueprintItem("Dual Heavy Beam Laser I", 10790.0366763151, 60, 1, "Energy Weapon"),
+	new BlueprintItem("Dual Heavy Pulse Laser I", 10600.5955691984, 60, 1, "Energy Weapon"),
+	new BlueprintItem("Dual Light Beam Laser I", 3504.2732382694, 200, 1, "Energy Weapon"),
+	new BlueprintItem("Dual Light Pulse Laser I", 3502.78050346316, 200, 1, "Energy Weapon"),
+	new BlueprintItem("Focused Medium Beam Laser I", 7046.39782279748, 100, 1, "Energy Weapon"),
+	new BlueprintItem("Focused Medium Pulse Laser I", 7029.40895393462, 100, 1, "Energy Weapon"),
+	new BlueprintItem("Gatling Pulse Laser I", 3501.02442636679, 200, 1, "Energy Weapon"),
+	new BlueprintItem("Heavy Beam Laser I", 7077.31520079339, 100, 1, "Energy Weapon"),
+	new BlueprintItem("Heavy Pulse Laser I", 7062.63259924126, 100, 1, "Energy Weapon"),
+	new BlueprintItem("Mega Beam Laser I", 11041.4181249253, 60, 1, "Energy Weapon"),
+	new BlueprintItem("Mega Pulse Laser I", 10915.2355852478, 60, 1, "Energy Weapon"),
+	new BlueprintItem("Quad Light Beam Laser I", 7009.3303146058, 100, 1, "Energy Weapon"),
+	new BlueprintItem("Quad Mega Pulse Laser I", 160482.494447172, 5, 1, "Energy Weapon"),
+	new BlueprintItem("Small Focused Beam Laser I", 3506.85785990553, 200, 1, "Energy Weapon"),
+	new BlueprintItem("Small Focused Pulse Laser I", 3506.01013640999, 200, 1, "Energy Weapon"),
+	new BlueprintItem("Tachyon Beam Laser I", 11164.9582086405, 60, 1, "Energy Weapon"),
+	new Divider("Entosis Link"),
+	new BlueprintItem("Entosis Link I", 21596.8628781623, 50, 1, "Entosis Link"),
+	new Divider("Expanded Cargohold"),
+	new BlueprintItem("Expanded Cargohold I", 3500.55315904003, 200, 1, "Expanded Cargohold"),
+	new Divider("Fighter Support Unit"),
+	new BlueprintItem("Fighter Support Unit I", 159076.279100346, 5, 1, "Fighter Support Unit"),
+	new Divider("Flex Armor Hardener"),
+	new BlueprintItem("Capital Flex Armor Hardener I", 150915.659558126, 5, 1, "Flex Armor Hardener"),
+	new Divider("Flex Armor Hardener Script"),
+	new BlueprintItem("Armor EM Resistance Script", 1174.3494945578, 600, 1, "Flex Armor Hardener Script"),
+	new BlueprintItem("Armor Explosive Resistance Script", 1174.15540710392, 600, 1, "Flex Armor Hardener Script"),
+	new BlueprintItem("Armor Kinetic Resistance Script", 1174.90181910374, 600, 1, "Flex Armor Hardener Script"),
+	new BlueprintItem("Armor Thermal Resistance Script", 1175.03773018036, 600, 1, "Flex Armor Hardener Script"),
+	new Divider("Flex Shield Hardener"),
+	new BlueprintItem("Capital Flex Shield Hardener I", 150473.493914523, 100, 1, "Flex Shield Hardener"),
+	new Divider("Flex Shield Hardener Script"),
+	new BlueprintItem("Shield EM Resistance Script", 1173.6779622709, 600, 1, "Flex Shield Hardener Script"),
+	new BlueprintItem("Shield Explosive Resistance Script", 1175.09546912429, 600, 1, "Flex Shield Hardener Script"),
+	new BlueprintItem("Shield Kinetic Resistance Script", 1174.68390211008, 600, 1, "Flex Shield Hardener Script"),
+	new BlueprintItem("Shield Thermal Resistance Script", 1174.96610601283, 600, 1, "Flex Shield Hardener Script"),
+	new Divider("Force Auxiliary"),
+	new BlueprintItem("Apostle", 12574886.216714, 1, 1, "Force Auxiliary"),
+	new BlueprintItem("Lif", 12579330.2995571, 1, 1, "Force Auxiliary"),
+	new BlueprintItem("Minokawa", 12576422.8979926, 1, 1, "Force Auxiliary"),
+	new BlueprintItem("Ninazu", 12575776.2063161, 1, 1, "Force Auxiliary"),
+	new Divider("Freight Container"),
+	new BlueprintItem("Enormous Freight Container", 5959.34226165995, 100, 1, "Freight Container"),
+	new BlueprintItem("Giant Freight Container", 4728.14890752146, 100, 1, "Freight Container"),
+	new BlueprintItem("Huge Freight Container", 4704.32155069243, 100, 1, "Freight Container"),
+	new BlueprintItem("Large Freight Container", 3524.75674482963, 200, 1, "Freight Container"),
+	new BlueprintItem("Medium Freight Container", 2343.15008725636, 300, 1, "Freight Container"),
+	new BlueprintItem("Small Freight Container", 1171.41152564125, 600, 1, "Freight Container"),
+	new Divider("Freighter"),
+	new BlueprintItem("Bowhead", 10754751.3505931, 1, 1, "Freighter"),
+	new BlueprintItem("Charon", 11944523.900978, 1, 1, "Freighter"),
+	new BlueprintItem("Fenrir", 11547797.5652821, 1, 1, "Freighter"),
+	new BlueprintItem("Obelisk", 11811615.8457372, 1, 1, "Freighter"),
+	new BlueprintItem("Providence", 11678491.2412245, 1, 1, "Freighter"),
+	new Divider("Frequency Crystal"),
+	new BlueprintItem("Gamma L", 3540.60298895885, 200, 1, "Frequency Crystal"),
+	new BlueprintItem("Gamma M", 2337.56419678177, 300, 1, "Frequency Crystal"),
+	new BlueprintItem("Gamma S", 1167.41968404152, 600, 1, "Frequency Crystal"),
+	new BlueprintItem("Gamma XL", 5081.08668148289, 100, 1, "Frequency Crystal"),
+	new BlueprintItem("Infrared L", 3512.80930938021, 200, 1, "Frequency Crystal"),
+	new BlueprintItem("Infrared M", 2334.94334346995, 300, 1, "Frequency Crystal"),
+	new BlueprintItem("Infrared S", 1166.94990697508, 600, 1, "Frequency Crystal"),
+	new BlueprintItem("Infrared XL", 4799.26818872528, 100, 1, "Frequency Crystal"),
+	new BlueprintItem("Microwave L", 3523.0601482268, 200, 1, "Frequency Crystal"),
+	new BlueprintItem("Microwave M", 2336.34363501818, 300, 1, "Frequency Crystal"),
+	new BlueprintItem("Microwave S", 1167.36663275444, 600, 1, "Frequency Crystal"),
+	new BlueprintItem("Microwave XL", 4903.52675337216, 100, 1, "Frequency Crystal"),
+	new BlueprintItem("Multifrequency L", 3544.19760338485, 200, 1, "Frequency Crystal"),
+	new BlueprintItem("Multifrequency M", 2337.63769512076, 300, 1, "Frequency Crystal"),
+	new BlueprintItem("Multifrequency S", 1167.58118436908, 600, 1, "Frequency Crystal"),
+	new BlueprintItem("Multifrequency XL", 5117.72870801883, 100, 1, "Frequency Crystal"),
+	new BlueprintItem("Radio L", 3536.34546828402, 200, 1, "Frequency Crystal"),
+	new BlueprintItem("Radio M", 2339.40338015553, 300, 1, "Frequency Crystal"),
+	new BlueprintItem("Radio S", 1167.21179710403, 600, 1, "Frequency Crystal"),
+	new BlueprintItem("Radio XL", 5033.44708400464, 100, 1, "Frequency Crystal"),
+	new BlueprintItem("Standard L", 3515.25310673194, 200, 1, "Frequency Crystal"),
+	new BlueprintItem("Standard M", 2335.4170993787, 300, 1, "Frequency Crystal"),
+	new BlueprintItem("Standard S", 1166.99940318209, 600, 1, "Frequency Crystal"),
+	new BlueprintItem("Standard XL", 4822.13552541186, 100, 1, "Frequency Crystal"),
+	new BlueprintItem("Ultraviolet L", 3517.34144703958, 200, 1, "Frequency Crystal"),
+	new BlueprintItem("Ultraviolet M", 2336.03804522304, 300, 1, "Frequency Crystal"),
+	new BlueprintItem("Ultraviolet S", 1167.06382774831, 600, 1, "Frequency Crystal"),
+	new BlueprintItem("Ultraviolet XL", 4844.10110115425, 100, 1, "Frequency Crystal"),
+	new BlueprintItem("Xray L", 3529.71707970687, 200, 1, "Frequency Crystal"),
+	new BlueprintItem("Xray M", 2338.60801954693, 300, 1, "Frequency Crystal"),
+	new BlueprintItem("Xray S", 1167.07830897759, 600, 1, "Frequency Crystal"),
+	new BlueprintItem("Xray XL", 4968.34603120816, 100, 1, "Frequency Crystal"),
+	new Divider("Frigate"),
+	new BlueprintItem("Atron", 23482.1632010806, 30, 1, "Frigate"),
+	new BlueprintItem("Bantam", 23465.6674737954, 30, 1, "Frigate"),
+	new BlueprintItem("Breacher", 23495.7897114851, 30, 1, "Frigate"),
+	new BlueprintItem("Burst", 23464.6609763175, 30, 1, "Frigate"),
+	new BlueprintItem("Condor", 23482.6749037858, 30, 1, "Frigate"),
+	new BlueprintItem("Crucifier", 23462.1358167272, 30, 1, "Frigate"),
+	new BlueprintItem("Executioner", 23483.1860118196, 30, 1, "Frigate"),
+	new BlueprintItem("Griffin", 23461.6292098346, 30, 1, "Frigate"),
+	new BlueprintItem("Heron", 23504.840078651, 30, 1, "Frigate"),
+	new BlueprintItem("Imicus", 23504.340880686, 30, 1, "Frigate"),
+	new BlueprintItem("Incursus", 23496.2875619961, 30, 1, "Frigate"),
+	new BlueprintItem("Inquisitor", 23466.1699804936, 30, 1, "Frigate"),
+	new BlueprintItem("Kestrel", 23496.7849721202, 30, 1, "Frigate"),
+	new BlueprintItem("Magnate", 23505.3388229993, 30, 1, "Frigate"),
+	new BlueprintItem("Maulus", 23461.1220637011, 30, 1, "Frigate"),
+	new BlueprintItem("Merlin", 23496.7849721202, 30, 1, "Frigate"),
+	new BlueprintItem("Navitas", 23465.1644741937, 30, 1, "Frigate"),
+	new BlueprintItem("Probe", 23503.8412245243, 30, 1, "Frigate"),
+	new BlueprintItem("Punisher", 23497.2819461051, 30, 1, "Frigate"),
+	new BlueprintItem("Rifter", 23495.7897114851, 30, 1, "Frigate"),
+	new BlueprintItem("Slasher", 23481.6508960033, 30, 1, "Frigate"),
+	new BlueprintItem("Tormentor", 23497.2819461051, 30, 1, "Frigate"),
+	new BlueprintItem("Tristan", 23496.2875619961, 30, 1, "Frigate"),
+	new BlueprintItem("Venture", 23466.1453417785, 30, 1, "Frigate"),
+	new BlueprintItem("Vigil", 23460.6143719449, 30, 1, "Frigate"),
+	new Divider("Fuel Block"),
+	new BlueprintItem("Helium Fuel Block", 3664.01562213424, 200, 40, "Fuel Block"),
+	new BlueprintItem("Hydrogen Fuel Block", 3671.88035628353, 200, 40, "Fuel Block"),
+	new BlueprintItem("Nitrogen Fuel Block", 3690.95587908538, 200, 40, "Fuel Block"),
+	new BlueprintItem("Oxygen Fuel Block", 3687.56148707088, 200, 40, "Fuel Block"),
+	new Divider("Gas Cloud Harvesters"),
+	new BlueprintItem("Gas Cloud Harvester I", 9013.27078970959, 80, 1, "Gas Cloud Harvesters"),
+	new Divider("Gas Cloud Scoops"),
+	new BlueprintItem("Gas Cloud Scoop I", 4237.07511143811, 200, 1, "Gas Cloud Scoops"),
+	new Divider("Guidance Disruption Script"),
+	new BlueprintItem("Missile Precision Disruption Script", 1170.57074230522, 600, 1, "Guidance Disruption Script"),
+	new BlueprintItem("Missile Range Disruption Script", 1170.57074230522, 600, 1, "Guidance Disruption Script"),
+	new Divider("Gyrostabilizer"),
+	new BlueprintItem("Gyrostabilizer I", 3510.56911876604, 200, 1, "Gyrostabilizer"),
+	new Divider("Hauler"),
+	new BlueprintItem("Badger", 47259.9699841374, 10, 1, "Hauler"),
+	new BlueprintItem("Bestower", 47316.969839426, 10, 1, "Hauler"),
+	new BlueprintItem("Epithal", 47355.0661817905, 10, 1, "Hauler"),
+	new BlueprintItem("Hoarder", 47299.8675637433, 10, 1, "Hauler"),
+	new BlueprintItem("Iteron Mark V", 47542.3247061834, 10, 1, "Hauler"),
+	new BlueprintItem("Kryos", 47257.5315097776, 10, 1, "Hauler"),
+	new BlueprintItem("Mammoth", 47476.73602615, 10, 1, "Hauler"),
+	new BlueprintItem("Miasmos", 47290.8235643427, 10, 1, "Hauler"),
+	new BlueprintItem("Nereus", 47244.7775184481, 10, 1, "Hauler"),
+	new BlueprintItem("Noctis", 77107.449937217, 10, 1, "Hauler"),
+	new BlueprintItem("Sigil", 47316.969839426, 10, 1, "Hauler"),
+	new BlueprintItem("Tayra", 47407.1034516417, 10, 1, "Hauler"),
+	new BlueprintItem("Wreathe", 47249.6980056861, 10, 1, "Hauler"),
+	new Divider("Heat Sink"),
+	new BlueprintItem("Heat Sink I", 3508.0991620012, 200, 1, "Heat Sink"),
+	new Divider("Heavy Assault Missile"),
+	new BlueprintItem("Inferno Heavy Assault Missile", 2336.3806529286, 300, 100, "Heavy Assault Missile"),
+	new BlueprintItem("Mjolnir Heavy Assault Missile", 2336.48620333136, 300, 100, "Heavy Assault Missile"),
+	new BlueprintItem("Nova Heavy Assault Missile", 2335.83574250963, 300, 100, "Heavy Assault Missile"),
+	new BlueprintItem("Scourge Heavy Assault Missile", 2336.25166778831, 300, 100, "Heavy Assault Missile"),
+	new Divider("Heavy Missile"),
+	new BlueprintItem("Inferno Heavy Missile", 2336.83853304743, 300, 100, "Heavy Missile"),
+	new BlueprintItem("Mjolnir Heavy Missile", 2337.16855108599, 300, 100, "Heavy Missile"),
+	new BlueprintItem("Nova Heavy Missile", 2336.06632371755, 300, 100, "Heavy Missile"),
+	new BlueprintItem("Scourge Heavy Missile", 2336.59050926106, 300, 100, "Heavy Missile"),
+	new Divider("Hull Repair Unit"),
+	new BlueprintItem("Capital Hull Repairer I", 148926.615633293, 5, 1, "Hull Repair Unit"),
+	new BlueprintItem("Large Hull Repairer I", 7081.38576561141, 100, 1, "Hull Repair Unit"),
+	new BlueprintItem("Medium Hull Repairer I", 7041.19635993239, 100, 1, "Hull Repair Unit"),
+	new BlueprintItem("Small Hull Repairer I", 3522.23430093865, 200, 1, "Hull Repair Unit"),
+	new Divider("Hybrid Charge"),
+	new BlueprintItem("Antimatter Charge L", 3508.09647420904, 200, 100, "Hybrid Charge"),
+	new BlueprintItem("Antimatter Charge M", 2336.24290988231, 300, 100, "Hybrid Charge"),
+	new BlueprintItem("Antimatter Charge S", 1167.30109624877, 600, 100, "Hybrid Charge"),
+	new BlueprintItem("Antimatter Charge XL", 4749.75575941176, 100, 100, "Hybrid Charge"),
+	new BlueprintItem("Iridium Charge L", 3503.46966020245, 200, 100, "Hybrid Charge"),
+	new BlueprintItem("Iridium Charge M", 2334.44678204534, 300, 100, "Hybrid Charge"),
+	new BlueprintItem("Iridium Charge S", 1166.89909762225, 600, 100, "Hybrid Charge"),
+	new BlueprintItem("Iridium Charge XL", 4702.31236915389, 100, 100, "Hybrid Charge"),
+	new BlueprintItem("Iron Charge L", 3501.76649572266, 200, 100, "Hybrid Charge"),
+	new BlueprintItem("Iron Charge M", 2333.91805526396, 300, 100, "Hybrid Charge"),
+	new BlueprintItem("Iron Charge S", 1166.79636950794, 600, 100, "Hybrid Charge"),
+	new BlueprintItem("Iron Charge XL", 4684.86350558964, 100, 100, "Hybrid Charge"),
+	new BlueprintItem("Lead Charge L", 3504.20243675106, 200, 100, "Hybrid Charge"),
+	new BlueprintItem("Lead Charge M", 2334.65412790161, 300, 100, "Hybrid Charge"),
+	new BlueprintItem("Lead Charge S", 1166.96077133544, 600, 100, "Hybrid Charge"),
+	new BlueprintItem("Lead Charge XL", 4709.85436029812, 100, 100, "Hybrid Charge"),
+	new BlueprintItem("Plutonium Charge L", 3506.59065001819, 200, 100, "Hybrid Charge"),
+	new BlueprintItem("Plutonium Charge M", 2335.57948082939, 300, 100, "Hybrid Charge"),
+	new BlueprintItem("Plutonium Charge S", 1167.12503822453, 600, 100, "Hybrid Charge"),
+	new BlueprintItem("Plutonium Charge XL", 4734.42284906347, 100, 100, "Hybrid Charge"),
+	new BlueprintItem("Thorium Charge L", 3505.30095264721, 200, 100, "Hybrid Charge"),
+	new BlueprintItem("Thorium Charge M", 2335.09266119527, 300, 100, "Hybrid Charge"),
+	new BlueprintItem("Thorium Charge S", 1167.03148036042, 600, 100, "Hybrid Charge"),
+	new BlueprintItem("Thorium Charge XL", 4721.08681562491, 100, 100, "Hybrid Charge"),
+	new BlueprintItem("Tungsten Charge L", 3502.6119228418, 200, 100, "Hybrid Charge"),
+	new BlueprintItem("Tungsten Charge M", 2334.23009955686, 300, 100, "Hybrid Charge"),
+	new BlueprintItem("Tungsten Charge S", 1166.85745857582, 600, 100, "Hybrid Charge"),
+	new BlueprintItem("Tungsten Charge XL", 4693.96738308569, 100, 100, "Hybrid Charge"),
+	new BlueprintItem("Uranium Charge L", 3506.15131894262, 200, 100, "Hybrid Charge"),
+	new BlueprintItem("Uranium Charge M", 2335.3275535346, 300, 100, "Hybrid Charge"),
+	new BlueprintItem("Uranium Charge S", 1167.09398818622, 600, 100, "Hybrid Charge"),
+	new BlueprintItem("Uranium Charge XL", 4729.76170427914, 100, 100, "Hybrid Charge"),
+	new Divider("Hybrid Tech Components"),
+	new BlueprintItem("Electromechanical Interface Nexus", 2449.4124537901, 1000, 1, "Hybrid Tech Components"),
+	new BlueprintItem("Emergent Neurovisual Interface", 9683.45141247956, 1000, 1, "Hybrid Tech Components"),
+	new BlueprintItem("Fullerene Intercalated Sheets", 2414.04092820575, 1000, 1, "Hybrid Tech Components"),
+	new BlueprintItem("Fulleroferrocene Power Conduits", 3077.39276492442, 1000, 1, "Hybrid Tech Components"),
+	new BlueprintItem("Metallofullerene Plating", 2374.19527470831, 1000, 1, "Hybrid Tech Components"),
+	new BlueprintItem("Nanowire Composites", 2365.12692137062, 1000, 1, "Hybrid Tech Components"),
+	new BlueprintItem("Neurovisual Output Analyzer", 7325.44019351594, 1000, 1, "Hybrid Tech Components"),
+	new BlueprintItem("Optimized Nano-Engines", 2449.3332865045, 1000, 1, "Hybrid Tech Components"),
+	new BlueprintItem("Reconfigured Subspace Calibrator", 2424.23708198499, 1000, 1, "Hybrid Tech Components"),
+	new BlueprintItem("Reinforced Metallofullerene Alloys", 2631.61030739212, 1000, 1, "Hybrid Tech Components"),
+	new BlueprintItem("Self-Assembling Nanolattice", 3091.92528117929, 1000, 1, "Hybrid Tech Components"),
+	new BlueprintItem("Superconducting Gravimetric Amplifier", 2820.27213138744, 1000, 1, "Hybrid Tech Components"),
+	new BlueprintItem("Superconducting Ladar Amplifier", 2900.81369676861, 1000, 1, "Hybrid Tech Components"),
+	new BlueprintItem("Superconducting Magnetometric Amplifier", 2722.42932446731, 1000, 1, "Hybrid Tech Components"),
+	new BlueprintItem("Superconducting Radar Amplifier", 2719.98570091758, 1000, 1, "Hybrid Tech Components"),
+	new BlueprintItem("Warfare Computation Core", 2631.82302861891, 1000, 1, "Hybrid Tech Components"),
+	new Divider("Hybrid Weapon"),
+	new BlueprintItem("125mm Railgun I", 3504.68580993478, 200, 1, "Hybrid Weapon"),
+	new BlueprintItem("150mm Railgun I", 3507.3033631731, 200, 1, "Hybrid Weapon"),
+	new BlueprintItem("200mm Railgun I", 7046.23412278015, 100, 1, "Hybrid Weapon"),
+	new BlueprintItem("250mm Railgun I", 7077.31520079339, 100, 1, "Hybrid Weapon"),
+	new BlueprintItem("350mm Railgun I", 10956.4495177141, 60, 1, "Hybrid Weapon"),
+	new BlueprintItem("425mm Railgun I", 11164.9582086405, 60, 1, "Hybrid Weapon"),
+	new BlueprintItem("75mm Gatling Rail I", 3501.02442636679, 200, 1, "Hybrid Weapon"),
+	new BlueprintItem("Dual 1000mm Railgun I", 161054.753099511, 5, 1, "Hybrid Weapon"),
+	new BlueprintItem("Dual 150mm Railgun I", 7010.44055856009, 100, 1, "Hybrid Weapon"),
+	new BlueprintItem("Dual 250mm Railgun I", 10600.5943524981, 60, 1, "Hybrid Weapon"),
+	new BlueprintItem("Electron Blaster Cannon I", 10790.0366763151, 60, 1, "Hybrid Weapon"),
+	new BlueprintItem("Heavy Electron Blaster I", 7029.40895393462, 100, 1, "Hybrid Weapon"),
+	new BlueprintItem("Heavy Ion Blaster I", 7046.39782279748, 100, 1, "Hybrid Weapon"),
+	new BlueprintItem("Heavy Neutron Blaster I", 7062.63259924126, 100, 1, "Hybrid Weapon"),
+	new BlueprintItem("Ion Blaster Cannon I", 10915.2355852478, 60, 1, "Hybrid Weapon"),
+	new BlueprintItem("Ion Siege Blaster I", 159052.63284919, 5, 1, "Hybrid Weapon"),
+	new BlueprintItem("Light Electron Blaster I", 3502.77687035697, 200, 1, "Hybrid Weapon"),
+	new BlueprintItem("Light Ion Blaster I", 3504.48380280588, 200, 1, "Hybrid Weapon"),
+	new BlueprintItem("Light Neutron Blaster I", 3506.22469010556, 200, 1, "Hybrid Weapon"),
+	new BlueprintItem("Neutron Blaster Cannon I", 11041.4181249253, 60, 1, "Hybrid Weapon"),
+	new BlueprintItem("Triple Neutron Blaster Cannon I", 159779.256041262, 5, 1, "Hybrid Weapon"),
+	new Divider("Industrial Command Ship"),
+	new BlueprintItem("Orca", 9035277.8163361, 1, 1, "Industrial Command Ship"),
+	new BlueprintItem("Porpoise", 97648.1731989848, 10, 1, "Industrial Command Ship"),
+	new Divider("Industrial Jump Portal Generator"),
+	new BlueprintItem("Industrial Jump Portal Generator I", 396190.100987861, 3, 1, "Industrial Jump Portal Generator"),
+	new Divider("Inertial Stabilizer"),
+	new BlueprintItem("Inertial Stabilizers I", 3503.32974209975, 200, 1, "Inertial Stabilizer"),
+	new Divider("Information Command Burst Charges"),
+	new BlueprintItem("Electronic Hardening Charge", 3572.22804776711, 200, 500, "Information Command Burst Charges"),
+	new BlueprintItem("Electronic Superiority Charge", 3572.22804776711, 200, 500, "Information Command Burst Charges"),
+	new BlueprintItem("Sensor Optimization Charge", 3572.22804776711, 200, 500, "Information Command Burst Charges"),
+	new Divider("Interdiction Burst Probes"),
+	new BlueprintItem("Stasis Webification Probe", 2346.55172330773, 300, 2, "Interdiction Burst Probes"),
+	new Divider("Interdiction Nullifier"),
+	new BlueprintItem("Interdiction Nullifier I", 3507.51690871566, 200, 1, "Interdiction Nullifier"),
+	new Divider("Interdiction Probe"),
+	new BlueprintItem("Warp Disrupt Probe", 2346.55172330773, 300, 2, "Interdiction Probe"),
+	new Divider("Interdiction Sphere Launcher"),
+	new BlueprintItem("Interdiction Sphere Launcher I", 14601.7043780561, 50, 1, "Interdiction Sphere Launcher"),
+	new Divider("Light Fighter"),
+	new BlueprintItem("Dragonfly I", 40562.0515582579, 50, 1, "Light Fighter"),
+	new BlueprintItem("Einherji I", 40496.7796657683, 50, 1, "Light Fighter"),
+	new BlueprintItem("Equite I", 40505.7490230635, 50, 1, "Light Fighter"),
+	new BlueprintItem("Firbolg I", 40767.6300691318, 50, 1, "Light Fighter"),
+	new BlueprintItem("Gram I", 40496.7796657683, 50, 1, "Light Fighter"),
+	new BlueprintItem("Locust I", 40562.0515582579, 50, 1, "Light Fighter"),
+	new BlueprintItem("Satyr I", 40767.6300691318, 50, 1, "Light Fighter"),
+	new BlueprintItem("Templar I", 40505.7490230635, 50, 1, "Light Fighter"),
+	new Divider("Light Missile"),
+	new BlueprintItem("Inferno Light Missile", 1167.18067278911, 600, 100, "Light Missile"),
+	new BlueprintItem("Mjolnir Light Missile", 1167.30879636716, 600, 100, "Light Missile"),
+	new BlueprintItem("Nova Light Missile", 1167.06037682542, 600, 100, "Light Missile"),
+	new BlueprintItem("Scourge Light Missile", 1167.12137184513, 600, 100, "Light Missile"),
+	new Divider("Logistic Drone"),
+	new BlueprintItem("Heavy Armor Maintenance Bot I", 3566.60755477222, 200, 1, "Logistic Drone"),
+	new BlueprintItem("Heavy Hull Maintenance Bot I", 3566.60755477222, 200, 1, "Logistic Drone"),
+	new BlueprintItem("Heavy Shield Maintenance Bot I", 3566.60755477222, 200, 1, "Logistic Drone"),
+	new BlueprintItem("Light Armor Maintenance Bot I", 1169.13586189101, 600, 1, "Logistic Drone"),
+	new BlueprintItem("Light Hull Maintenance Bot I", 1169.13586189101, 600, 1, "Logistic Drone"),
+	new BlueprintItem("Light Shield Maintenance Bot I", 1169.13586189101, 600, 1, "Logistic Drone"),
+	new BlueprintItem("Medium Armor Maintenance Bot I", 2348.30060913448, 300, 1, "Logistic Drone"),
+	new BlueprintItem("Medium Hull Maintenance Bot I", 2348.30060913448, 300, 1, "Logistic Drone"),
+	new BlueprintItem("Medium Shield Maintenance Bot I", 2348.30060913448, 300, 1, "Logistic Drone"),
+	new Divider("Magnetic Field Stabilizer"),
+	new BlueprintItem("Magnetic Field Stabilizer I", 3515.0591658047, 200, 1, "Magnetic Field Stabilizer"),
+	new Divider("Mass Entanglers"),
+	new BlueprintItem("Zero-Point Mass Entangler", 15729.9908883387, 50, 1, "Mass Entanglers"),
+	new Divider("Mercoxit Mining Crystal"),
+	new BlueprintItem("Mercoxit Asteroid Mining Crystal Type A I", 1342.31393144714, 600, 1, "Mercoxit Mining Crystal"),
+	new BlueprintItem("Mercoxit Asteroid Mining Crystal Type B I", 1411.21694037899, 600, 1, "Mercoxit Mining Crystal"),
+	new BlueprintItem("Mercoxit Asteroid Mining Crystal Type C I", 1459.77737533559, 600, 1, "Mercoxit Mining Crystal"),
+	new Divider("Micro Jump Field Generators"),
+	new BlueprintItem("Micro Jump Field Generator", 7191.55650304222, 100, 1, "Micro Jump Field Generators"),
+	new Divider("Mining Barge"),
+	new BlueprintItem("Covetor", 101408.562401968, 10, 1, "Mining Barge"),
+	new BlueprintItem("Procurer", 88806.1167628478, 10, 1, "Mining Barge"),
+	new BlueprintItem("Retriever", 95163.2441415635, 10, 1, "Mining Barge"),
+	new Divider("Mining Crystal"),
+	new BlueprintItem("Abyssal Asteroid Mining Crystal Type A I", 1265.28727762212, 600, 1, "Mining Crystal"),
+	new BlueprintItem("Abyssal Asteroid Mining Crystal Type B I", 1289.74241992834, 600, 1, "Mining Crystal"),
+	new BlueprintItem("Abyssal Asteroid Mining Crystal Type C I", 1314.16540304663, 600, 1, "Mining Crystal"),
+	new BlueprintItem("Coherent Asteroid Mining Crystal Type A I", 1216.23718496397, 600, 1, "Mining Crystal"),
+	new BlueprintItem("Coherent Asteroid Mining Crystal Type B I", 1228.61400126436, 600, 1, "Mining Crystal"),
+	new BlueprintItem("Coherent Asteroid Mining Crystal Type C I", 1240.79084455658, 600, 1, "Mining Crystal"),
+	new BlueprintItem("Common Moon Mining Crystal Type A I", 1259.99994888818, 600, 1, "Mining Crystal"),
+	new BlueprintItem("Common Moon Mining Crystal Type B I", 1283.09732146669, 600, 1, "Mining Crystal"),
+	new BlueprintItem("Common Moon Mining Crystal Type C I", 1306.34684142581, 600, 1, "Mining Crystal"),
+	new BlueprintItem("Complex Asteroid Mining Crystal Type A I", 1265.28727762212, 600, 1, "Mining Crystal"),
+	new BlueprintItem("Complex Asteroid Mining Crystal Type B I", 1289.74241992834, 600, 1, "Mining Crystal"),
+	new BlueprintItem("Complex Asteroid Mining Crystal Type C I", 1314.16540304663, 600, 1, "Mining Crystal"),
+	new BlueprintItem("Exceptional Moon Mining Crystal Type A I", 1276.44329330551, 600, 1, "Mining Crystal"),
+	new BlueprintItem("Exceptional Moon Mining Crystal Type B I", 1303.62134598485, 600, 1, "Mining Crystal"),
+	new BlueprintItem("Exceptional Moon Mining Crystal Type C I", 1330.9466973348, 600, 1, "Mining Crystal"),
+	new BlueprintItem("Rare Moon Mining Crystal Type A I", 1270.96414256819, 600, 1, "Mining Crystal"),
+	new BlueprintItem("Rare Moon Mining Crystal Type B I", 1296.78240538743, 600, 1, "Mining Crystal"),
+	new BlueprintItem("Rare Moon Mining Crystal Type C I", 1322.74957440297, 600, 1, "Mining Crystal"),
+	new BlueprintItem("Simple Asteroid Mining Crystal Type A I", 1187.23000379, 600, 1, "Mining Crystal"),
+	new BlueprintItem("Simple Asteroid Mining Crystal Type B I", 1192.30768704662, 600, 1, "Mining Crystal"),
+	new BlueprintItem("Simple Asteroid Mining Crystal Type C I", 1197.37521640461, 600, 1, "Mining Crystal"),
+	new BlueprintItem("Ubiquitous Moon Mining Crystal Type A I", 1254.51465358669, 600, 1, "Mining Crystal"),
+	new BlueprintItem("Ubiquitous Moon Mining Crystal Type B I", 1276.25086965596, 600, 1, "Mining Crystal"),
+	new BlueprintItem("Ubiquitous Moon Mining Crystal Type C I", 1298.1408678837, 600, 1, "Mining Crystal"),
+	new BlueprintItem("Uncommon Moon Mining Crystal Type A I", 1265.48306735023, 600, 1, "Mining Crystal"),
+	new BlueprintItem("Uncommon Moon Mining Crystal Type B I", 1289.94111227416, 600, 1, "Mining Crystal"),
+	new BlueprintItem("Uncommon Moon Mining Crystal Type C I", 1314.54967945547, 600, 1, "Mining Crystal"),
+	new BlueprintItem("Variegated Asteroid Mining Crystal Type A I", 1245.63841227592, 600, 1, "Mining Crystal"),
+	new BlueprintItem("Variegated Asteroid Mining Crystal Type B I", 1265.21926444434, 600, 1, "Mining Crystal"),
+	new BlueprintItem("Variegated Asteroid Mining Crystal Type C I", 1284.77405548552, 600, 1, "Mining Crystal"),
+	new Divider("Mining Drone"),
+	new BlueprintItem("Civilian Mining Drone", 1171.28727123571, 600, 1, "Mining Drone"),
+	new BlueprintItem("Ice Harvesting Drone I", 5982.63951230231, 600, 1, "Mining Drone"),
+	new BlueprintItem("Mining Drone I", 1188.50766013859, 600, 1, "Mining Drone"),
+	new Divider("Mining Foreman Burst Charges"),
+	new BlueprintItem("Mining Equipment Preservation Charge", 3558.9682254182, 200, 500, "Mining Foreman Burst Charges"),
+	new BlueprintItem("Mining Laser Field Enhancement Charge", 3558.9682254182, 200, 500, "Mining Foreman Burst Charges"),
+	new BlueprintItem("Mining Laser Optimization Charge", 3558.9682254182, 200, 500, "Mining Foreman Burst Charges"),
+	new Divider("Mining Laser"),
+	new BlueprintItem("Deep Core Mining Laser I", 14811.554583966, 80, 1, "Mining Laser"),
+	new BlueprintItem("Ice Mining Laser I", 3629.32291951152, 200, 1, "Mining Laser"),
+	new BlueprintItem("Miner I", 3504.874598934, 200, 1, "Mining Laser"),
+	new Divider("Mining Upgrade"),
+	new BlueprintItem("Ice Harvester Upgrade I", 3508.10068416033, 200, 1, "Mining Upgrade"),
+	new BlueprintItem("Mining Laser Upgrade I", 3508.10068416033, 200, 1, "Mining Upgrade"),
+	new Divider("Missile Guidance Computer"),
+	new BlueprintItem("Missile Guidance Computer I", 7003.15951836311, 100, 1, "Missile Guidance Computer"),
+	new Divider("Missile Guidance Enhancer"),
+	new BlueprintItem("Missile Guidance Enhancer I", 3506.78664145848, 200, 1, "Missile Guidance Enhancer"),
+	new Divider("Missile Guidance Script"),
+	new BlueprintItem("Missile Precision Script", 1170.57074230522, 600, 1, "Missile Guidance Script"),
+	new BlueprintItem("Missile Range Script", 1170.57074230522, 600, 1, "Missile Guidance Script"),
+	new Divider("Missile Launcher Bomb"),
+	new BlueprintItem("Bomb Launcher I", 14654.2495566673, 50, 1, "Missile Launcher Bomb"),
+	new Divider("Missile Launcher Cruise"),
+	new BlueprintItem("Cruise Missile Launcher I", 10523.4110567853, 60, 1, "Missile Launcher Cruise"),
+	new Divider("Missile Launcher Defender"),
+	new BlueprintItem("Defender Launcher I", 8070.25215023695, 100, 1, "Missile Launcher Defender"),
+	new Divider("Missile Launcher Heavy"),
+	new BlueprintItem("Heavy Missile Launcher I", 7016.19191073694, 100, 1, "Missile Launcher Heavy"),
+	new Divider("Missile Launcher Heavy Assault"),
+	new BlueprintItem("Heavy Assault Missile Launcher I", 7016.98753667352, 100, 1, "Missile Launcher Heavy Assault"),
+	new Divider("Missile Launcher Light"),
+	new BlueprintItem("Light Missile Launcher I", 3502.93070851643, 200, 1, "Missile Launcher Light"),
+	new Divider("Missile Launcher Rapid Heavy"),
+	new BlueprintItem("Rapid Heavy Missile Launcher I", 10525.1587933391, 60, 1, "Missile Launcher Rapid Heavy"),
+	new Divider("Missile Launcher Rapid Light"),
+	new BlueprintItem("Rapid Light Missile Launcher I", 7004.66308947199, 100, 1, "Missile Launcher Rapid Light"),
+	new Divider("Missile Launcher Rapid Torpedo"),
+	new BlueprintItem("Rapid Torpedo Launcher I", 160658.543896939, 5, 1, "Missile Launcher Rapid Torpedo"),
+	new Divider("Missile Launcher Rocket"),
+	new BlueprintItem("Rocket Launcher I", 3501.63507400305, 200, 1, "Missile Launcher Rocket"),
+	new Divider("Missile Launcher Torpedo"),
+	new BlueprintItem("Torpedo Launcher I", 10529.4708748321, 60, 1, "Missile Launcher Torpedo"),
+	new Divider("Missile Launcher XL Cruise"),
+	new BlueprintItem("XL Cruise Missile Launcher I", 161799.936646126, 5, 1, "Missile Launcher XL Cruise"),
+	new Divider("Missile Launcher XL Torpedo"),
+	new BlueprintItem("XL Torpedo Launcher I", 161799.936646126, 5, 1, "Missile Launcher XL Torpedo"),
+	new Divider("Mobile Cyno Inhibitor"),
+	new BlueprintItem("Mobile Cynosural Inhibitor", 60753.3841160666, 10, 1, "Mobile Cyno Inhibitor"),
+	new Divider("Mobile Cynosural Beacon"),
+	new BlueprintItem("Covert Mobile Cynosural Beacon", 62796.5958049747, 10, 1, "Mobile Cynosural Beacon"),
+	new BlueprintItem("Mobile Cynosural Beacon", 55520.7648088151, 10, 1, "Mobile Cynosural Beacon"),
+	new Divider("Mobile Depot"),
+	new BlueprintItem("Mobile Depot", 46914.2381701324, 10, 1, "Mobile Depot"),
+	new Divider("Mobile Micro Jump Unit"),
+	new BlueprintItem("Mobile Micro Jump Unit", 48100.7334067456, 10, 1, "Mobile Micro Jump Unit"),
+	new Divider("Mobile Observatory"),
+	new BlueprintItem("Mobile Observatory", 60340.2327881225, 10, 1, "Mobile Observatory"),
+	new Divider("Mobile Scan Inhibitor"),
+	new BlueprintItem("Mobile Scan Inhibitor", 81084.5151512697, 10, 1, "Mobile Scan Inhibitor"),
+	new Divider("Mobile Tractor Unit"),
+	new BlueprintItem("Mobile Tractor Unit", 25582.2776785145, 30, 1, "Mobile Tractor Unit"),
+	new Divider("Mobile Warp Disruptor"),
+	new BlueprintItem("Mobile Large Warp Disruptor I", 41560.7476059548, 40, 1, "Mobile Warp Disruptor"),
+	new BlueprintItem("Mobile Medium Warp Disruptor I", 25743.2783113522, 60, 1, "Mobile Warp Disruptor"),
+	new BlueprintItem("Mobile Small Warp Disruptor I", 12581.3185262054, 100, 1, "Mobile Warp Disruptor"),
+	new Divider("Nanite Repair Paste"),
+	new BlueprintItem("Nanite Repair Paste", 1266.55508729235, 600, 10, "Nanite Repair Paste"),
+	new Divider("Nanofiber Internal Structure"),
+	new BlueprintItem("Nanofiber Internal Structure I", 3500.55315904003, 200, 1, "Nanofiber Internal Structure"),
+	new Divider("Overdrive Injector System"),
+	new BlueprintItem("Overdrive Injector System I", 3511.18523323263, 200, 1, "Overdrive Injector System"),
+	new Divider("Passive Targeting System"),
+	new BlueprintItem("Passive Targeter I", 7019.01269095974, 100, 1, "Passive Targeting System"),
+	new Divider("Power Diagnostic System"),
+	new BlueprintItem("Power Diagnostic System I", 3503.49047344208, 200, 1, "Power Diagnostic System"),
+	new Divider("Projectile Ammo"),
+	new BlueprintItem("Carbonized Lead L", 3501.76649572266, 200, 100, "Projectile Ammo"),
+	new BlueprintItem("Carbonized Lead M", 2333.91805526396, 300, 100, "Projectile Ammo"),
+	new BlueprintItem("Carbonized Lead S", 1166.79636950794, 600, 100, "Projectile Ammo"),
+	new BlueprintItem("Carbonized Lead XL", 4684.86350558964, 100, 100, "Projectile Ammo"),
+	new BlueprintItem("Depleted Uranium L", 3504.20243675106, 200, 100, "Projectile Ammo"),
+	new BlueprintItem("Depleted Uranium M", 2334.84424351042, 300, 100, "Projectile Ammo"),
+	new BlueprintItem("Depleted Uranium S", 1166.96077133544, 600, 100, "Projectile Ammo"),
+	new BlueprintItem("Depleted Uranium XL", 4709.85436029812, 100, 100, "Projectile Ammo"),
+	new BlueprintItem("EMP L", 3508.09647420904, 200, 100, "Projectile Ammo"),
+	new BlueprintItem("EMP M", 2336.24290988231, 300, 100, "Projectile Ammo"),
+	new BlueprintItem("EMP S", 1167.30109624877, 600, 100, "Projectile Ammo"),
+	new BlueprintItem("EMP XL", 4749.75575941176, 100, 100, "Projectile Ammo"),
+	new BlueprintItem("Fusion L", 3506.15131894262, 200, 100, "Projectile Ammo"),
+	new BlueprintItem("Fusion M", 2335.32117645078, 300, 100, "Projectile Ammo"),
+	new BlueprintItem("Fusion S", 1167.06791899373, 600, 100, "Projectile Ammo"),
+	new BlueprintItem("Fusion XL", 4729.76170427914, 100, 100, "Projectile Ammo"),
+	new BlueprintItem("Nuclear L", 3502.6119228418, 200, 100, "Projectile Ammo"),
+	new BlueprintItem("Nuclear M", 2334.23477715787, 300, 100, "Projectile Ammo"),
+	new BlueprintItem("Nuclear S", 1166.85745857582, 600, 100, "Projectile Ammo"),
+	new BlueprintItem("Nuclear XL", 4693.96738308569, 100, 100, "Projectile Ammo"),
+	new BlueprintItem("Phased Plasma L", 3506.59065001819, 200, 100, "Projectile Ammo"),
+	new BlueprintItem("Phased Plasma M", 2335.58020148183, 300, 100, "Projectile Ammo"),
+	new BlueprintItem("Phased Plasma S", 1167.12503822453, 600, 100, "Projectile Ammo"),
+	new BlueprintItem("Phased Plasma XL", 4734.42284906347, 100, 100, "Projectile Ammo"),
+	new BlueprintItem("Proton L", 3503.46966020245, 200, 100, "Projectile Ammo"),
+	new BlueprintItem("Proton M", 2334.5467796138, 300, 100, "Projectile Ammo"),
+	new BlueprintItem("Proton S", 1166.89909762225, 600, 100, "Projectile Ammo"),
+	new BlueprintItem("Proton XL", 4702.31236915389, 100, 100, "Projectile Ammo"),
+	new BlueprintItem("Titanium Sabot L", 3505.30095264721, 200, 100, "Projectile Ammo"),
+	new BlueprintItem("Titanium Sabot M", 2335.0827983547, 300, 100, "Projectile Ammo"),
+	new BlueprintItem("Titanium Sabot S", 1167.03148036042, 600, 100, "Projectile Ammo"),
+	new BlueprintItem("Titanium Sabot XL", 4721.08681562491, 100, 100, "Projectile Ammo"),
+	new Divider("Projectile Weapon"),
+	new BlueprintItem("1200mm Artillery Cannon I", 11041.4181249253, 60, 1, "Projectile Weapon"),
+	new BlueprintItem("125mm Gatling AutoCannon I", 3501.02442636679, 200, 1, "Projectile Weapon"),
+	new BlueprintItem("1400mm Howitzer Artillery I", 11164.9582086405, 60, 1, "Projectile Weapon"),
+	new BlueprintItem("150mm Light AutoCannon I", 3502.77687035697, 200, 1, "Projectile Weapon"),
+	new BlueprintItem("200mm AutoCannon I", 3504.48380280588, 200, 1, "Projectile Weapon"),
+	new BlueprintItem("220mm Vulcan AutoCannon I", 7029.40895393462, 100, 1, "Projectile Weapon"),
+	new BlueprintItem("250mm Light Artillery Cannon I", 3506.22469010556, 200, 1, "Projectile Weapon"),
+	new BlueprintItem("280mm Howitzer Artillery I", 3507.3033631731, 200, 1, "Projectile Weapon"),
+	new BlueprintItem("425mm AutoCannon I", 7046.39782279748, 100, 1, "Projectile Weapon"),
+	new BlueprintItem("650mm Artillery Cannon I", 7062.63259924126, 100, 1, "Projectile Weapon"),
+	new BlueprintItem("720mm Howitzer Artillery I", 7077.31520079339, 100, 1, "Projectile Weapon"),
+	new BlueprintItem("800mm Repeating Cannon I", 10915.2355852478, 60, 1, "Projectile Weapon"),
+	new BlueprintItem("Dual 180mm AutoCannon I", 7010.44055856009, 100, 1, "Projectile Weapon"),
+	new BlueprintItem("Dual 425mm AutoCannon I", 10600.5955691984, 60, 1, "Projectile Weapon"),
+	new BlueprintItem("Dual 650mm Repeating Cannon I", 10790.0366763151, 60, 1, "Projectile Weapon"),
+	new BlueprintItem("Hexa 2500mm Repeating Cannon I", 155497.526827011, 5, 1, "Projectile Weapon"),
+	new BlueprintItem("Quad 3500mm Siege Artillery I", 157704.870004891, 5, 1, "Projectile Weapon"),
+	new BlueprintItem("Quad 800mm Repeating Cannon I", 157369.146569402, 5, 1, "Projectile Weapon"),
+	new Divider("Propulsion Module"),
+	new BlueprintItem("10000MN Afterburner I", 149125.778027401, 5, 1, "Propulsion Module"),
+	new BlueprintItem("100MN Afterburner I", 10588.0531826603, 60, 1, "Propulsion Module"),
+	new BlueprintItem("10MN Afterburner I", 7017.4244694503, 100, 1, "Propulsion Module"),
+	new BlueprintItem("1MN Afterburner I", 3503.22307014572, 200, 1, "Propulsion Module"),
+	new BlueprintItem("50000MN Microwarpdrive I", 160507.892679077, 5, 1, "Propulsion Module"),
+	new BlueprintItem("500MN Microwarpdrive I", 10866.1833556415, 60, 1, "Propulsion Module"),
+	new BlueprintItem("50MN Microwarpdrive I", 7078.2916543089, 100, 1, "Propulsion Module"),
+	new BlueprintItem("5MN Microwarpdrive I", 3515.77204573491, 200, 1, "Propulsion Module"),
+	new Divider("Reactor Control Unit"),
+	new BlueprintItem("Reactor Control Unit I", 3503.33599431747, 200, 1, "Reactor Control Unit"),
+	new Divider("Reinforced Bulkhead"),
+	new BlueprintItem("Reinforced Bulkheads I", 3509.01518316895, 200, 1, "Reinforced Bulkhead"),
+	new Divider("Remote Armor Repairer"),
+	new BlueprintItem("Capital I-ax Enduring Remote Armor Repairer", 159500.628700281, 5, 1, "Remote Armor Repairer"),
+	new BlueprintItem("Capital Remote Armor Repairer I", 151270.393833329, 5, 1, "Remote Armor Repairer"),
+	new BlueprintItem("Capital Solace Scoped Remote Armor Repairer", 158656.85325656, 5, 1, "Remote Armor Repairer"),
+	new BlueprintItem("Large Remote Armor Repairer I", 10518.5321630433, 60, 1, "Remote Armor Repairer"),
+	new BlueprintItem("Medium Remote Armor Repairer I", 7006.93778573123, 100, 1, "Remote Armor Repairer"),
+	new BlueprintItem("Small Remote Armor Repairer I", 3502.73337119112, 200, 1, "Remote Armor Repairer"),
+	new Divider("Remote Capacitor Transmitter"),
+	new BlueprintItem("Capital Remote Capacitor Transmitter I", 152064.376191651, 5, 1, "Remote Capacitor Transmitter"),
+	new BlueprintItem("Large Remote Capacitor Transmitter I", 10577.7393988061, 60, 1, "Remote Capacitor Transmitter"),
+	new BlueprintItem("Medium Remote Capacitor Transmitter I", 7033.14384125531, 100, 1, "Remote Capacitor Transmitter"),
+	new BlueprintItem("Small Remote Capacitor Transmitter I", 3513.9888285757, 200, 1, "Remote Capacitor Transmitter"),
+	new Divider("Remote Hull Repairer"),
+	new BlueprintItem("Capital Remote Hull Repairer I", 151347.269551441, 5, 1, "Remote Hull Repairer"),
+	new BlueprintItem("Large Remote Hull Repairer I", 10550.8057245419, 60, 1, "Remote Hull Repairer"),
+	new BlueprintItem("Medium Remote Hull Repairer I", 7031.33403402424, 100, 1, "Remote Hull Repairer"),
+	new BlueprintItem("Small Remote Hull Repairer I", 3518.33724511055, 200, 1, "Remote Hull Repairer"),
+	new Divider("Remote Sensor Booster"),
+	new BlueprintItem("Remote Sensor Booster I", 7022.05694548967, 100, 1, "Remote Sensor Booster"),
+	new Divider("Remote Shield Booster"),
+	new BlueprintItem("Capital Asymmetric Enduring Remote Shield Booster", 156432.94953803, 5, 1, "Remote Shield Booster"),
+	new BlueprintItem("Capital Remote Shield Booster I", 150770.02324971, 5, 1, "Remote Shield Booster"),
+	new BlueprintItem("Large Remote Shield Booster I", 7017.24032889591, 100, 1, "Remote Shield Booster"),
+	new BlueprintItem("Medium Remote Shield Booster I", 7006.93778573123, 100, 1, "Remote Shield Booster"),
+	new BlueprintItem("Small Remote Shield Booster I", 3502.73337119112, 200, 1, "Remote Shield Booster"),
+	new Divider("Remote Tracking Computer"),
+	new BlueprintItem("Remote Tracking Computer I", 7016.34556177309, 100, 1, "Remote Tracking Computer"),
+	new Divider("Rig Anchor"),
+	new BlueprintItem("Large Higgs Anchor I", 31075.7990008759, 40, 1, "Rig Anchor"),
+	new BlueprintItem("Medium Higgs Anchor I", 18286.8246192689, 60, 1, "Rig Anchor"),
+	new BlueprintItem("Small Higgs Anchor I", 9756.34956472177, 100, 1, "Rig Anchor"),
+	new Divider("Rig Armor"),
+	new BlueprintItem("Capital Auxiliary Nano Pump I", 28384.77568642, 30, 1, "Rig Armor"),
+	new BlueprintItem("Capital EM Armor Reinforcer I", 27562.1582677816, 30, 1, "Rig Armor"),
+	new BlueprintItem("Capital Explosive Armor Reinforcer I", 27562.1582677816, 30, 1, "Rig Armor"),
+	new BlueprintItem("Capital Nanobot Accelerator I", 28384.77568642, 30, 1, "Rig Armor"),
+	new BlueprintItem("Capital Remote Repair Augmentor I", 28384.77568642, 30, 1, "Rig Armor"),
+	new BlueprintItem("Capital Transverse Bulkhead I", 25860.9552206268, 30, 1, "Rig Armor"),
+	new BlueprintItem("Capital Trimark Armor Pump I", 27605.2597053861, 30, 1, "Rig Armor"),
+	new BlueprintItem("Large Auxiliary Nano Pump I", 18368.8587768741, 40, 1, "Rig Armor"),
+	new BlueprintItem("Large EM Armor Reinforcer I", 18200.1668633261, 40, 1, "Rig Armor"),
+	new BlueprintItem("Large Explosive Armor Reinforcer I", 18200.1668633261, 40, 1, "Rig Armor"),
+	new BlueprintItem("Large Kinetic Armor Reinforcer I", 18200.1668633261, 40, 1, "Rig Armor"),
+	new BlueprintItem("Large Nanobot Accelerator I", 18368.8587768741, 40, 1, "Rig Armor"),
+	new BlueprintItem("Large Remote Repair Augmentor I", 18368.8587768741, 40, 1, "Rig Armor"),
+	new BlueprintItem("Large Thermal Armor Reinforcer I", 18200.1668633261, 40, 1, "Rig Armor"),
+	new BlueprintItem("Large Transverse Bulkhead I", 17861.3800522108, 40, 1, "Rig Armor"),
+	new BlueprintItem("Large Trimark Armor Pump I", 18209.40288567, 40, 1, "Rig Armor"),
+	new BlueprintItem("Medium Auxiliary Nano Pump I", 11846.7991607702, 60, 1, "Rig Armor"),
+	new BlueprintItem("Medium EM Armor Reinforcer I", 11808.5862932536, 60, 1, "Rig Armor"),
+	new BlueprintItem("Medium Explosive Armor Reinforcer I", 11808.5862932536, 60, 1, "Rig Armor"),
+	new BlueprintItem("Medium Kinetic Armor Reinforcer I", 11808.5862932536, 60, 1, "Rig Armor"),
+	new BlueprintItem("Medium Nanobot Accelerator I", 11846.7991607702, 60, 1, "Rig Armor"),
+	new BlueprintItem("Medium Remote Repair Augmentor I", 11846.7991607702, 60, 1, "Rig Armor"),
+	new BlueprintItem("Medium Thermal Armor Reinforcer I", 11808.5862932536, 60, 1, "Rig Armor"),
+	new BlueprintItem("Medium Transverse Bulkhead I", 11743.5187244133, 60, 1, "Rig Armor"),
+	new BlueprintItem("Medium Trimark Armor Pump I", 11810.1256303109, 60, 1, "Rig Armor"),
+	new BlueprintItem("Small Auxiliary Nano Pump I", 5872.11331619664, 100, 1, "Rig Armor"),
+	new BlueprintItem("Small EM Armor Reinforcer I", 5862.46191017452, 100, 1, "Rig Armor"),
+	new BlueprintItem("Small Explosive Armor Reinforcer I", 5862.46191017452, 100, 1, "Rig Armor"),
+	new BlueprintItem("Small Kinetic Armor Reinforcer I", 5862.46191017452, 100, 1, "Rig Armor"),
+	new BlueprintItem("Small Nanobot Accelerator I", 5872.11331619664, 100, 1, "Rig Armor"),
+	new BlueprintItem("Small Remote Repair Augmentor I", 5862.46191017452, 100, 1, "Rig Armor"),
+	new BlueprintItem("Small Thermal Armor Reinforcer I", 5862.46191017452, 100, 1, "Rig Armor"),
+	new BlueprintItem("Small Transverse Bulkhead I", 5846.49293595604, 100, 1, "Rig Armor"),
+	new BlueprintItem("Small Trimark Armor Pump I", 5862.46191017452, 100, 1, "Rig Armor"),
+	new Divider("Rig Core"),
+	new BlueprintItem("Large Ancillary Current Router I", 19018.5005942652, 40, 1, "Rig Core"),
+	new BlueprintItem("Large Capacitor Control Circuit I", 18065.0549065195, 40, 1, "Rig Core"),
+	new BlueprintItem("Large Command Processor I", 17637.185138767, 40, 1, "Rig Core"),
+	new BlueprintItem("Large Egress Port Maximizer I", 17596.4523573135, 40, 1, "Rig Core"),
+	new BlueprintItem("Large Liquid Cooled Electronics I", 17546.1753889668, 40, 1, "Rig Core"),
+	new BlueprintItem("Large Powergrid Subroutine Maximizer I", 17596.4523573135, 40, 1, "Rig Core"),
+	new BlueprintItem("Large Processor Overclocking Unit I", 17546.1753889668, 40, 1, "Rig Core"),
+	new BlueprintItem("Large Semiconductor Memory Cell I", 18654.8337706525, 40, 1, "Rig Core"),
+	new BlueprintItem("Medium Ancillary Current Router I", 11975.1797787264, 60, 1, "Rig Core"),
+	new BlueprintItem("Medium Capacitor Control Circuit I", 11785.6084348627, 60, 1, "Rig Core"),
+	new BlueprintItem("Medium Command Processor I", 11699.074504376, 60, 1, "Rig Core"),
+	new BlueprintItem("Medium Egress Port Maximizer I", 11690.9239821567, 60, 1, "Rig Core"),
+	new BlueprintItem("Medium Liquid Cooled Electronics I", 11680.8975297496, 60, 1, "Rig Core"),
+	new BlueprintItem("Medium Powergrid Subroutine Maximizer I", 11690.9239821567, 60, 1, "Rig Core"),
+	new BlueprintItem("Medium Processor Overclocking Unit I", 11680.8975297496, 60, 1, "Rig Core"),
+	new BlueprintItem("Medium Semiconductor Memory Cell I", 11899.723314628, 60, 1, "Rig Core"),
+	new BlueprintItem("Small Ancillary Current Router I", 5893.80125949758, 100, 1, "Rig Core"),
+	new BlueprintItem("Small Capacitor Control Circuit I", 5854.60341816012, 100, 1, "Rig Core"),
+	new BlueprintItem("Small Command Processor I", 5838.86492513769, 100, 1, "Rig Core"),
+	new BlueprintItem("Small Egress Port Maximizer I", 5837.20462182607, 100, 1, "Rig Core"),
+	new BlueprintItem("Small Liquid Cooled Electronics I", 5835.17425963527, 100, 1, "Rig Core"),
+	new BlueprintItem("Small Powergrid Subroutine Maximizer I", 5837.20462182607, 100, 1, "Rig Core"),
+	new BlueprintItem("Small Processor Overclocking Unit I", 5835.17425963527, 100, 1, "Rig Core"),
+	new BlueprintItem("Small Semiconductor Memory Cell I", 5880.85095258128, 100, 1, "Rig Core"),
+	new Divider("Rig Drones"),
+	new BlueprintItem("Capital Drone Mining Augmentor I", 27469.8701302027, 30, 1, "Rig Drones"),
+	new BlueprintItem("Large Drone Control Range Augmentor I", 17982.3451090255, 40, 1, "Rig Drones"),
+	new BlueprintItem("Large Drone Durability Enhancer I", 18182.5213737989, 40, 1, "Rig Drones"),
+	new BlueprintItem("Large Drone Mining Augmentor I", 18182.6753857029, 40, 1, "Rig Drones"),
+	new BlueprintItem("Large Drone Repair Augmentor I", 18010.0544210207, 40, 1, "Rig Drones"),
+	new BlueprintItem("Large Drone Scope Chip I", 17982.3451090255, 40, 1, "Rig Drones"),
+	new BlueprintItem("Large Drone Speed Augmentor I", 17983.731216162, 40, 1, "Rig Drones"),
+	new BlueprintItem("Large Sentry Damage Augmentor I", 18202.187701796, 40, 1, "Rig Drones"),
+	new BlueprintItem("Large Stasis Drone Augmentor I", 18286.8978685271, 40, 1, "Rig Drones"),
+	new BlueprintItem("Medium Drone Control Range Augmentor I", 11770.2512271941, 60, 1, "Rig Drones"),
+	new BlueprintItem("Medium Drone Durability Enhancer I", 11806.9636164789, 60, 1, "Rig Drones"),
+	new BlueprintItem("Medium Drone Mining Augmentor I", 11806.9944188597, 60, 1, "Rig Drones"),
+	new BlueprintItem("Medium Drone Repair Augmentor I", 11775.639148971, 60, 1, "Rig Drones"),
+	new BlueprintItem("Medium Drone Scope Chip I", 11770.2512271941, 60, 1, "Rig Drones"),
+	new BlueprintItem("Medium Drone Speed Augmentor I", 11770.5284486214, 60, 1, "Rig Drones"),
+	new BlueprintItem("Medium Sentry Damage Augmentor I", 11812.9775005192, 60, 1, "Rig Drones"),
+	new BlueprintItem("Medium Stasis Drone Augmentor I", 11831.2834898382, 60, 1, "Rig Drones"),
+	new BlueprintItem("Small Drone Control Range Augmentor I", 5850.94884142553, 100, 1, "Rig Drones"),
+	new BlueprintItem("Small Drone Durability Enhancer I", 5858.05567537065, 100, 1, "Rig Drones"),
+	new BlueprintItem("Small Drone Mining Augmentor I", 5858.05567537065, 100, 1, "Rig Drones"),
+	new BlueprintItem("Small Drone Repair Augmentor I", 5852.10339609199, 100, 1, "Rig Drones"),
+	new BlueprintItem("Small Drone Scope Chip I", 5850.94884142553, 100, 1, "Rig Drones"),
+	new BlueprintItem("Small Drone Speed Augmentor I", 5850.97964380634, 100, 1, "Rig Drones"),
+	new BlueprintItem("Small Sentry Damage Augmentor I", 5858.08647775146, 100, 1, "Rig Drones"),
+	new BlueprintItem("Small Stasis Drone Augmentor I", 5869.92943154717, 100, 1, "Rig Drones"),
+	new Divider("Rig Electronic Systems"),
+	new BlueprintItem("Large Inverted Signal Field Projector I", 17609.6152086809, 40, 1, "Rig Electronic Systems"),
+	new BlueprintItem("Large Particle Dispersion Augmentor I", 17593.0188996101, 40, 1, "Rig Electronic Systems"),
+	new BlueprintItem("Large Particle Dispersion Projector I", 17575.3634202425, 40, 1, "Rig Electronic Systems"),
+	new BlueprintItem("Large Signal Disruption Amplifier I", 17575.9151578769, 40, 1, "Rig Electronic Systems"),
+	new BlueprintItem("Large Targeting Systems Stabilizer I", 18143.8727704704, 40, 1, "Rig Electronic Systems"),
+	new BlueprintItem("Large Tracking Diagnostic Subroutines I", 17575.3634202425, 40, 1, "Rig Electronic Systems"),
+	new BlueprintItem("Medium Inverted Signal Field Projector I", 11693.6258964069, 60, 1, "Rig Electronic Systems"),
+	new BlueprintItem("Medium Particle Dispersion Augmentor I", 11690.2216839901, 60, 1, "Rig Electronic Systems"),
+	new BlueprintItem("Medium Particle Dispersion Projector I", 11686.6985684081, 60, 1, "Rig Electronic Systems"),
+	new BlueprintItem("Medium Signal Disruption Amplifier I", 11687.0044905614, 60, 1, "Rig Electronic Systems"),
+	new BlueprintItem("Medium Targeting Systems Stabilizer I", 11799.3200120105, 60, 1, "Rig Electronic Systems"),
+	new BlueprintItem("Medium Tracking Diagnostic Subroutines I", 11686.6985684081, 60, 1, "Rig Electronic Systems"),
+	new BlueprintItem("Small Inverted Signal Field Projector I", 5837.4413121387, 100, 1, "Rig Electronic Systems"),
+	new BlueprintItem("Small Particle Dispersion Augmentor I", 5837.04855556683, 100, 1, "Rig Electronic Systems"),
+	new BlueprintItem("Small Particle Dispersion Projector I", 5836.28675747223, 100, 1, "Rig Electronic Systems"),
+	new BlueprintItem("Small Signal Disruption Amplifier I", 5836.09026482806, 100, 1, "Rig Electronic Systems"),
+	new BlueprintItem("Small Targeting Systems Stabilizer I", 5856.65345744075, 100, 1, "Rig Electronic Systems"),
+	new BlueprintItem("Small Tracking Diagnostic Subroutines I", 5836.28675747223, 100, 1, "Rig Electronic Systems"),
+	new Divider("Rig Energy Weapon"),
+	new BlueprintItem("Capital Energy Locus Coordinator I", 24450.0697080568, 30, 1, "Rig Energy Weapon"),
+	new BlueprintItem("Large Algid Energy Administrations Unit I", 17587.5120913183, 40, 1, "Rig Energy Weapon"),
+	new BlueprintItem("Large Energy Ambit Extension I", 17579.9891671916, 40, 1, "Rig Energy Weapon"),
+	new BlueprintItem("Large Energy Burst Aerator I", 17595.6886430078, 40, 1, "Rig Energy Weapon"),
+	new BlueprintItem("Large Energy Collision Accelerator I", 17602.0469846487, 40, 1, "Rig Energy Weapon"),
+	new BlueprintItem("Large Energy Discharge Elutriation I", 17553.0187253718, 40, 1, "Rig Energy Weapon"),
+	new BlueprintItem("Large Energy Locus Coordinator I", 17579.9891671916, 40, 1, "Rig Energy Weapon"),
+	new BlueprintItem("Large Energy Metastasis Adjuster I", 17579.9891671916, 40, 1, "Rig Energy Weapon"),
+	new BlueprintItem("Medium Algid Energy Administrations Unit I", 11689.1094785957, 60, 1, "Rig Energy Weapon"),
+	new BlueprintItem("Medium Energy Ambit Extension I", 11687.5961013983, 60, 1, "Rig Energy Weapon"),
+	new BlueprintItem("Medium Energy Burst Aerator I", 11690.9716505046, 60, 1, "Rig Energy Weapon"),
+	new BlueprintItem("Medium Energy Collision Accelerator I", 11692.1938820806, 60, 1, "Rig Energy Weapon"),
+	new BlueprintItem("Medium Energy Discharge Elutriation I", 11682.0854207966, 60, 1, "Rig Energy Weapon"),
+	new BlueprintItem("Medium Energy Locus Coordinator I", 11687.5961013983, 60, 1, "Rig Energy Weapon"),
+	new BlueprintItem("Medium Energy Metastasis Adjuster I", 11687.5961013983, 60, 1, "Rig Energy Weapon"),
+	new BlueprintItem("Small Algid Energy Administrations Unit I", 5836.57041228145, 100, 1, "Rig Energy Weapon"),
+	new BlueprintItem("Small Energy Ambit Extension I", 5836.42483947072, 100, 1, "Rig Energy Weapon"),
+	new BlueprintItem("Small Energy Burst Aerator I", 5837.50149823593, 100, 1, "Rig Energy Weapon"),
+	new BlueprintItem("Small Energy Collision Accelerator I", 5837.50149823593, 100, 1, "Rig Energy Weapon"),
+	new BlueprintItem("Small Energy Discharge Elutriation I", 5835.39865120792, 100, 1, "Rig Energy Weapon"),
+	new BlueprintItem("Small Energy Locus Coordinator I", 5836.42483947072, 100, 1, "Rig Energy Weapon"),
+	new BlueprintItem("Small Energy Metastasis Adjuster I", 5836.42483947072, 100, 1, "Rig Energy Weapon"),
+	new Divider("Rig Hybrid Weapon"),
+	new BlueprintItem("Large Algid Hybrid Administrations Unit I", 17586.745534217, 40, 1, "Rig Hybrid Weapon"),
+	new BlueprintItem("Large Hybrid Ambit Extension I", 17579.4120961153, 40, 1, "Rig Hybrid Weapon"),
+	new BlueprintItem("Large Hybrid Burst Aerator I", 17594.8101168916, 40, 1, "Rig Hybrid Weapon"),
+	new BlueprintItem("Large Hybrid Collision Accelerator I", 17601.0478765165, 40, 1, "Rig Hybrid Weapon"),
+	new BlueprintItem("Large Hybrid Discharge Elutriation I", 17552.8292393467, 40, 1, "Rig Hybrid Weapon"),
+	new BlueprintItem("Large Hybrid Locus Coordinator I", 17579.4120961153, 40, 1, "Rig Hybrid Weapon"),
+	new BlueprintItem("Large Hybrid Metastasis Adjuster I", 17579.4120961153, 40, 1, "Rig Hybrid Weapon"),
+	new BlueprintItem("Medium Algid Hybrid Administrations Unit I", 11688.9544445752, 60, 1, "Rig Hybrid Weapon"),
+	new BlueprintItem("Medium Hybrid Ambit Extension I", 11687.4841323834, 60, 1, "Rig Hybrid Weapon"),
+	new BlueprintItem("Medium Hybrid Burst Aerator I", 11690.7993904818, 60, 1, "Rig Hybrid Weapon"),
+	new BlueprintItem("Medium Hybrid Collision Accelerator I", 11691.9957830544, 60, 1, "Rig Hybrid Weapon"),
+	new BlueprintItem("Medium Hybrid Discharge Elutriation I", 11682.050968792, 60, 1, "Rig Hybrid Weapon"),
+	new BlueprintItem("Medium Hybrid Locus Coordinator I", 11687.4841323834, 60, 1, "Rig Hybrid Weapon"),
+	new BlueprintItem("Medium Hybrid Metastasis Adjuster I", 11687.4841323834, 60, 1, "Rig Hybrid Weapon"),
+	new BlueprintItem("Small Algid Hybrid Administrations Unit I", 5836.54457327803, 100, 1, "Rig Hybrid Weapon"),
+	new BlueprintItem("Small Hybrid Ambit Extension I", 5836.40761346844, 100, 1, "Rig Hybrid Weapon"),
+	new BlueprintItem("Small Hybrid Burst Aerator I", 5837.46704623137, 100, 1, "Rig Hybrid Weapon"),
+	new BlueprintItem("Small Hybrid Collision Accelerator I", 5837.46704623137, 100, 1, "Rig Hybrid Weapon"),
+	new BlueprintItem("Small Hybrid Discharge Elutriation I", 5835.39003820678, 100, 1, "Rig Hybrid Weapon"),
+	new BlueprintItem("Small Hybrid Locus Coordinator I", 5836.40761346844, 100, 1, "Rig Hybrid Weapon"),
+	new BlueprintItem("Small Hybrid Metastasis Adjuster I", 5836.40761346844, 100, 1, "Rig Hybrid Weapon"),
+	new Divider("Rig Launcher"),
+	new BlueprintItem("Capital Warhead Rigor Catalyst I", 27461.2067870199, 30, 1, "Rig Launcher"),
+	new BlueprintItem("Large Bay Loading Accelerator I", 18258.9848446238, 40, 1, "Rig Launcher"),
+	new BlueprintItem("Large Hydraulic Bay Thrusters I", 18180.9444517474, 40, 1, "Rig Launcher"),
+	new BlueprintItem("Large Rocket Fuel Cache Partition I", 18181.3414369204, 40, 1, "Rig Launcher"),
+	new BlueprintItem("Large Warhead Calefaction Catalyst I", 18319.212117493, 40, 1, "Rig Launcher"),
+	new BlueprintItem("Large Warhead Flare Catalyst I", 18111.1374239677, 40, 1, "Rig Launcher"),
+	new BlueprintItem("Large Warhead Rigor Catalyst I", 18180.9444517474, 40, 1, "Rig Launcher"),
+	new BlueprintItem("Medium Bay Loading Accelerator I", 11826.7847638692, 60, 1, "Rig Launcher"),
+	new BlueprintItem("Medium Hydraulic Bay Thrusters I", 11806.6473647281, 60, 1, "Rig Launcher"),
+	new BlueprintItem("Medium Rocket Fuel Cache Partition I", 11806.7267617627, 60, 1, "Rig Launcher"),
+	new BlueprintItem("Medium Warhead Calefaction Catalyst I", 11837.7472069719, 60, 1, "Rig Launcher"),
+	new BlueprintItem("Medium Warhead Flare Catalyst I", 11793.9503659176, 60, 1, "Rig Launcher"),
+	new BlueprintItem("Medium Warhead Rigor Catalyst I", 11806.6473647281, 60, 1, "Rig Launcher"),
+	new BlueprintItem("Small Bay Loading Accelerator I", 5868.4722231453, 100, 1, "Rig Launcher"),
+	new BlueprintItem("Small Hydraulic Bay Thrusters I", 5858.01619958462, 100, 1, "Rig Launcher"),
+	new BlueprintItem("Small Rocket Fuel Cache Partition I", 5858.01619958462, 100, 1, "Rig Launcher"),
+	new BlueprintItem("Small Warhead Calefaction Catalyst I", 5868.4722231453, 100, 1, "Rig Launcher"),
+	new BlueprintItem("Small Warhead Flare Catalyst I", 5857.53624572081, 100, 1, "Rig Launcher"),
+	new BlueprintItem("Small Warhead Rigor Catalyst I", 5858.01619958462, 100, 1, "Rig Launcher"),
+	new Divider("Rig Navigation"),
+	new BlueprintItem("Capital Cargohold Optimization I", 25708.3108998902, 30, 1, "Rig Navigation"),
+	new BlueprintItem("Capital Hyperspatial Velocity Optimizer I", 27381.1904991054, 30, 1, "Rig Navigation"),
+	new BlueprintItem("Large Auxiliary Thrusters I", 18075.7990008759, 40, 1, "Rig Navigation"),
+	new BlueprintItem("Large Cargohold Optimization I", 17831.275654629, 40, 1, "Rig Navigation"),
+	new BlueprintItem("Large Dynamic Fuel Valve I", 17772.7161759312, 40, 1, "Rig Navigation"),
+	new BlueprintItem("Large Engine Thermal Shielding I", 17722.958577345, 40, 1, "Rig Navigation"),
+	new BlueprintItem("Large Hyperspatial Velocity Optimizer I", 18168.3317054906, 40, 1, "Rig Navigation"),
+	new BlueprintItem("Large Low Friction Nozzle Joints I", 18075.7990008759, 40, 1, "Rig Navigation"),
+	new BlueprintItem("Large Polycarbon Engine Housing I", 17829.4862663535, 40, 1, "Rig Navigation"),
+	new BlueprintItem("Large Warp Core Optimizer I", 18130.0329940142, 40, 1, "Rig Navigation"),
+	new BlueprintItem("Medium Auxiliary Thrusters I", 11786.8246192689, 60, 1, "Rig Navigation"),
+	new BlueprintItem("Medium Cargohold Optimization I", 11738.1928443225, 60, 1, "Rig Navigation"),
+	new BlueprintItem("Medium Dynamic Fuel Valve I", 11727.4654671008, 60, 1, "Rig Navigation"),
+	new BlueprintItem("Medium Engine Thermal Shielding I", 11715.3984500259, 60, 1, "Rig Navigation"),
+	new BlueprintItem("Medium Hyperspatial Velocity Optimizer I", 11803.1462289687, 60, 1, "Rig Navigation"),
+	new BlueprintItem("Medium Low Friction Nozzle Joints I", 11786.8246192689, 60, 1, "Rig Navigation"),
+	new BlueprintItem("Medium Polycarbon Engine Housing I", 11737.0145746068, 60, 1, "Rig Navigation"),
+	new BlueprintItem("Medium Warp Core Optimizer I", 11797.6630958871, 60, 1, "Rig Navigation"),
+	new BlueprintItem("Small Auxiliary Thrusters I", 5856.34956472177, 100, 1, "Rig Navigation"),
+	new BlueprintItem("Small Cargohold Optimization I", 5846.03239314845, 100, 1, "Rig Navigation"),
+	new BlueprintItem("Small Dynamic Fuel Valve I", 5842.66844927072, 100, 1, "Rig Navigation"),
+	new BlueprintItem("Small Engine Thermal Shielding I", 5840.87480768834, 100, 1, "Rig Navigation"),
+	new BlueprintItem("Small Hyperspatial Velocity Optimizer I", 5856.39117476939, 100, 1, "Rig Navigation"),
+	new BlueprintItem("Small Low Friction Nozzle Joints I", 5856.34956472177, 100, 1, "Rig Navigation"),
+	new BlueprintItem("Small Polycarbon Engine Housing I", 5845.24688000471, 100, 1, "Rig Navigation"),
+	new BlueprintItem("Small Warp Core Optimizer I", 5856.39117476939, 100, 1, "Rig Navigation"),
+	new Divider("Rig Projectile Weapon"),
+	new BlueprintItem("Capital Projectile Metastasis Adjuster I", 24411.5051606798, 30, 1, "Rig Projectile Weapon"),
+	new BlueprintItem("Large Projectile Ambit Extension I", 17572.2299339356, 40, 1, "Rig Projectile Weapon"),
+	new BlueprintItem("Large Projectile Burst Aerator I", 17583.8760789464, 40, 1, "Rig Projectile Weapon"),
+	new BlueprintItem("Large Projectile Collision Accelerator I", 17588.6130882651, 40, 1, "Rig Projectile Weapon"),
+	new BlueprintItem("Large Projectile Locus Coordinator I", 17572.2299339356, 40, 1, "Rig Projectile Weapon"),
+	new BlueprintItem("Large Projectile Metastasis Adjuster I", 17572.2299339356, 40, 1, "Rig Projectile Weapon"),
+	new BlueprintItem("Medium Projectile Ambit Extension I", 11686.0905785277, 60, 1, "Rig Projectile Weapon"),
+	new BlueprintItem("Medium Projectile Burst Aerator I", 11688.655461473, 60, 1, "Rig Projectile Weapon"),
+	new BlueprintItem("Medium Projectile Collision Accelerator I", 11689.5302646942, 60, 1, "Rig Projectile Weapon"),
+	new BlueprintItem("Medium Projectile Locus Coordinator I", 11686.0905785277, 60, 1, "Rig Projectile Weapon"),
+	new BlueprintItem("Medium Projectile Metastasis Adjuster I", 11686.0905785277, 60, 1, "Rig Projectile Weapon"),
+	new BlueprintItem("Small Projectile Ambit Extension I", 5836.19322056755, 100, 1, "Rig Projectile Weapon"),
+	new BlueprintItem("Small Projectile Burst Aerator I", 5837.0382604296, 100, 1, "Rig Projectile Weapon"),
+	new BlueprintItem("Small Projectile Collision Accelerator I", 5837.0382604296, 100, 1, "Rig Projectile Weapon"),
+	new BlueprintItem("Small Projectile Locus Coordinator I", 5836.19322056755, 100, 1, "Rig Projectile Weapon"),
+	new BlueprintItem("Small Projectile Metastasis Adjuster I", 5836.19322056755, 100, 1, "Rig Projectile Weapon"),
+	new Divider("Rig Resource Processing"),
+	new BlueprintItem("Large Salvage Tackle I", 18368.8587768741, 40, 1, "Rig Resource Processing"),
+	new BlueprintItem("Medium Ice Harvester Accelerator I", 11695.897968551, 60, 1, "Rig Resource Processing"),
+	new BlueprintItem("Medium Mercoxit Mining Crystal Optimization I", 11696.9402536152, 60, 1, "Rig Resource Processing"),
+	new BlueprintItem("Medium Salvage Tackle I", 11846.7991607702, 60, 1, "Rig Resource Processing"),
+	new BlueprintItem("Small Salvage Tackle I", 5872.11331619664, 100, 1, "Rig Resource Processing"),
+	new Divider("Rig Scanning"),
+	new BlueprintItem("Large Emission Scope Sharpener I", 17588.8939116259, 40, 1, "Rig Scanning"),
+	new BlueprintItem("Large Gravity Capacitor Upgrade I", 17575.3634202425, 40, 1, "Rig Scanning"),
+	new BlueprintItem("Large Memetic Algorithm Bank I", 17546.1753889668, 40, 1, "Rig Scanning"),
+	new BlueprintItem("Large Signal Focusing Kit I", 17899.2151300148, 40, 1, "Rig Scanning"),
+	new BlueprintItem("Medium Emission Scope Sharpener I", 11689.3642639704, 60, 1, "Rig Scanning"),
+	new BlueprintItem("Medium Gravity Capacitor Upgrade I", 11686.6985684081, 60, 1, "Rig Scanning"),
+	new BlueprintItem("Medium Memetic Algorithm Bank I", 11680.8975297496, 60, 1, "Rig Scanning"),
+	new BlueprintItem("Medium Signal Focusing Kit I", 11749.3001793125, 60, 1, "Rig Scanning"),
+	new BlueprintItem("Small Emission Scope Sharpener I", 5836.71366585722, 100, 1, "Rig Scanning"),
+	new BlueprintItem("Small Gravity Capacitor Upgrade I", 5836.28675747223, 100, 1, "Rig Scanning"),
+	new BlueprintItem("Small Memetic Algorithm Bank I", 5835.17425963527, 100, 1, "Rig Scanning"),
+	new BlueprintItem("Small Signal Focusing Kit I", 5845.58020675602, 100, 1, "Rig Scanning"),
+	new Divider("Rig Shield"),
+	new BlueprintItem("Capital Core Defense Capacitor Safeguard I", 24341.7422975552, 30, 1, "Rig Shield"),
+	new BlueprintItem("Capital Core Defense Field Extender I", 28919.1668190596, 30, 1, "Rig Shield"),
+	new BlueprintItem("Capital Core Defense Operational Solidifier I", 28919.1668190596, 30, 1, "Rig Shield"),
+	new BlueprintItem("Capital EM Shield Reinforcer I", 24404.1530073387, 30, 1, "Rig Shield"),
+	new BlueprintItem("Large Core Defense Capacitor Safeguard I", 17558.4027940734, 40, 1, "Rig Shield"),
+	new BlueprintItem("Large Core Defense Charge Economizer I", 17564.5920018393, 40, 1, "Rig Shield"),
+	new BlueprintItem("Large Core Defense Field Extender I", 18469.9095031427, 40, 1, "Rig Shield"),
+	new BlueprintItem("Large Core Defense Field Purger I", 18469.9095031427, 40, 1, "Rig Shield"),
+	new BlueprintItem("Large Core Defense Operational Solidifier I", 18469.9095031427, 40, 1, "Rig Shield"),
+	new BlueprintItem("Large EM Shield Reinforcer I", 17570.4748844035, 40, 1, "Rig Shield"),
+	new BlueprintItem("Large Explosive Shield Reinforcer I", 17570.4748844035, 40, 1, "Rig Shield"),
+	new BlueprintItem("Large Kinetic Shield Reinforcer I", 17570.4748844035, 40, 1, "Rig Shield"),
+	new BlueprintItem("Large Thermal Shield Reinforcer I", 17570.4748844035, 40, 1, "Rig Shield"),
+	new BlueprintItem("Medium Core Defense Capacitor Safeguard I", 11683.0643423787, 60, 1, "Rig Shield"),
+	new BlueprintItem("Medium Core Defense Charge Economizer I", 11684.5143852531, 60, 1, "Rig Shield"),
+	new BlueprintItem("Medium Core Defense Field Extender I", 11865.7538525135, 60, 1, "Rig Shield"),
+	new BlueprintItem("Medium Core Defense Field Purger I", 11865.7538525135, 60, 1, "Rig Shield"),
+	new BlueprintItem("Medium Core Defense Operational Solidifier I", 11865.7538525135, 60, 1, "Rig Shield"),
+	new BlueprintItem("Medium EM Shield Reinforcer I", 11685.8903001927, 60, 1, "Rig Shield"),
+	new BlueprintItem("Medium Explosive Shield Reinforcer I", 11685.8903001927, 60, 1, "Rig Shield"),
+	new BlueprintItem("Medium Kinetic Shield Reinforcer I", 11685.8903001927, 60, 1, "Rig Shield"),
+	new BlueprintItem("Medium Thermal Shield Reinforcer I", 11685.8903001927, 60, 1, "Rig Shield"),
+	new BlueprintItem("Small Core Defense Capacitor Safeguard I", 5835.44700331751, 100, 1, "Rig Shield"),
+	new BlueprintItem("Small Core Defense Charge Economizer I", 5835.9348621977, 100, 1, "Rig Shield"),
+	new BlueprintItem("Small Core Defense Field Extender I", 5871.15097464804, 100, 1, "Rig Shield"),
+	new BlueprintItem("Small Core Defense Field Purger I", 5871.15097464804, 100, 1, "Rig Shield"),
+	new BlueprintItem("Small Core Defense Operational Solidifier I", 5871.15097464804, 100, 1, "Rig Shield"),
+	new BlueprintItem("Small EM Shield Reinforcer I", 5836.12878711802, 100, 1, "Rig Shield"),
+	new BlueprintItem("Small Explosive Shield Reinforcer I", 5836.12878711802, 100, 1, "Rig Shield"),
+	new BlueprintItem("Small Kinetic Shield Reinforcer I", 5836.12878711802, 100, 1, "Rig Shield"),
+	new BlueprintItem("Small Thermal Shield Reinforcer I", 5836.12878711802, 100, 1, "Rig Shield"),
+	new Divider("Rig Targeting"),
+	new BlueprintItem("Large Ionic Field Projector I", 18143.8727704704, 40, 1, "Rig Targeting"),
+	new BlueprintItem("Large Targeting System Subcontroller I", 18143.8727704704, 40, 1, "Rig Targeting"),
+	new BlueprintItem("Medium Ionic Field Projector I", 11799.3200120105, 60, 1, "Rig Targeting"),
+	new BlueprintItem("Medium Targeting System Subcontroller I", 11799.3200120105, 60, 1, "Rig Targeting"),
+	new BlueprintItem("Small Ionic Field Projector I", 5856.65345744075, 100, 1, "Rig Targeting"),
+	new BlueprintItem("Small Targeting System Subcontroller I", 5856.65345744075, 100, 1, "Rig Targeting"),
+	new Divider("Rocket"),
+	new BlueprintItem("Inferno Rocket", 1166.85528368731, 600, 100, "Rocket"),
+	new BlueprintItem("Mjolnir Rocket", 1166.89182435021, 600, 100, "Rocket"),
+	new BlueprintItem("Nova Rocket", 1166.83343563395, 600, 100, "Rocket"),
+	new BlueprintItem("Scourge Rocket", 1166.85465372908, 600, 100, "Rocket"),
+	new Divider("Salvage Drone"),
+	new BlueprintItem("Salvage Drone I", 1203.84230790746, 600, 1, "Salvage Drone"),
+	new Divider("Salvager"),
+	new BlueprintItem("Salvager I", 10513.6356961451, 60, 1, "Salvager"),
+	new Divider("Scan Probe Launcher"),
+	new BlueprintItem("Core Probe Launcher I", 10503.5158796779, 60, 1, "Scan Probe Launcher"),
+	new BlueprintItem("Expanded Probe Launcher I", 14003.8084652586, 50, 1, "Scan Probe Launcher"),
+	new Divider("Scanner Probe"),
+	new BlueprintItem("Combat Scanner Probe I", 2346.06406637235, 300, 1, "Scanner Probe"),
+	new BlueprintItem("Core Scanner Probe I", 1173.31364018706, 600, 1, "Scanner Probe"),
+	new Divider("Scanning Upgrade"),
+	new BlueprintItem("Scan Pinpointing Array I", 7018.00866911199, 100, 1, "Scanning Upgrade"),
+	new BlueprintItem("Scan Rangefinding Array I", 7018.00866911199, 100, 1, "Scanning Upgrade"),
+	new Divider("Scanning Upgrade Time"),
+	new BlueprintItem("Scan Acquisition Array I", 7018.00866911199, 100, 1, "Scanning Upgrade Time"),
+	new Divider("Secure Cargo Container"),
+	new BlueprintItem("Giant Secure Container", 4735.78142102198, 100, 1, "Secure Cargo Container"),
+	new BlueprintItem("Huge Secure Container", 5869.52167637327, 100, 1, "Secure Cargo Container"),
+	new BlueprintItem("Large Secure Container", 3514.70906272036, 200, 1, "Secure Cargo Container"),
+	new BlueprintItem("Medium Secure Container", 2340.35537965703, 300, 1, "Secure Cargo Container"),
+	new BlueprintItem("Small Secure Container", 1168.75598991475, 600, 1, "Secure Cargo Container"),
+	new Divider("Sensor Booster"),
+	new BlueprintItem("Sensor Booster I", 7007.31646780741, 100, 1, "Sensor Booster"),
+	new Divider("Sensor Booster Script"),
+	new BlueprintItem("ECCM Script", 1170.57074230522, 600, 1, "Sensor Booster Script"),
+	new BlueprintItem("Scan Resolution Script", 1170.57074230522, 600, 1, "Sensor Booster Script"),
+	new BlueprintItem("Targeting Range Script", 1170.57074230522, 600, 1, "Sensor Booster Script"),
+	new Divider("Sensor Dampener"),
+	new BlueprintItem("Remote Sensor Dampener I", 7022.54408717799, 100, 1, "Sensor Dampener"),
+	new Divider("Sensor Dampener Script"),
+	new BlueprintItem("Scan Resolution Dampening Script", 1170.57074230522, 600, 1, "Sensor Dampener Script"),
+	new BlueprintItem("Targeting Range Dampening Script", 1170.57074230522, 600, 1, "Sensor Dampener Script"),
+	new Divider("Shield Boost Amplifier"),
+	new BlueprintItem("Shield Boost Amplifier I", 7132.41665634512, 100, 1, "Shield Boost Amplifier"),
+	new Divider("Shield Booster"),
+	new BlueprintItem("Capital Shield Booster I", 163298.608226371, 5, 1, "Shield Booster"),
+	new BlueprintItem("Large Shield Booster I", 7060.46572321554, 100, 1, "Shield Booster"),
+	new BlueprintItem("Medium Shield Booster I", 3514.28991462349, 200, 1, "Shield Booster"),
+	new BlueprintItem("Small Shield Booster I", 3504.7989059349, 200, 1, "Shield Booster"),
+	new BlueprintItem("X-Large Shield Booster I", 10725.4066405793, 60, 1, "Shield Booster"),
+	new Divider("Shield Command Burst Charges"),
+	new BlueprintItem("Active Shielding Charge", 3573.97576646696, 200, 500, "Shield Command Burst Charges"),
+	new BlueprintItem("Shield Extension Charge", 3573.97576646696, 200, 500, "Shield Command Burst Charges"),
+	new BlueprintItem("Shield Harmonizing Charge", 3573.97576646696, 200, 500, "Shield Command Burst Charges"),
+	new Divider("Shield Extender"),
+	new BlueprintItem("Capital Shield Extender I", 147667.509299829, 5, 1, "Shield Extender"),
+	new BlueprintItem("Large Shield Extender I", 7016.88145967201, 100, 1, "Shield Extender"),
+	new BlueprintItem("Medium Shield Extender I", 3506.51834769633, 200, 1, "Shield Extender"),
+	new BlueprintItem("Small Shield Extender I", 3502.6297735412, 200, 1, "Shield Extender"),
+	new Divider("Shield Flux Coil"),
+	new BlueprintItem("Shield Flux Coil I", 3501.84562382524, 200, 1, "Shield Flux Coil"),
+	new Divider("Shield Hardener"),
+	new BlueprintItem("EM Shield Hardener I", 7039.81077289389, 100, 1, "Shield Hardener"),
+	new BlueprintItem("Explosive Shield Hardener I", 7039.81077289389, 100, 1, "Shield Hardener"),
+	new BlueprintItem("Kinetic Shield Hardener I", 7039.81077289389, 100, 1, "Shield Hardener"),
+	new BlueprintItem("Multispectrum Shield Hardener I", 7039.81077289389, 100, 1, "Shield Hardener"),
+	new BlueprintItem("Thermal Shield Hardener I", 7039.81077289389, 100, 1, "Shield Hardener"),
+	new Divider("Shield Power Relay"),
+	new BlueprintItem("Shield Power Relay I", 3504.8419840734, 200, 1, "Shield Power Relay"),
+	new Divider("Shield Recharger"),
+	new BlueprintItem("Shield Recharger I", 7004.41531806144, 100, 1, "Shield Recharger"),
+	new Divider("Shield Resistance Amplifier"),
+	new BlueprintItem("EM Shield Amplifier I", 7010.18386892605, 100, 1, "Shield Resistance Amplifier"),
+	new BlueprintItem("Explosive Shield Amplifier I", 7010.18386892605, 100, 1, "Shield Resistance Amplifier"),
+	new BlueprintItem("Kinetic Shield Amplifier I", 7010.18386892605, 100, 1, "Shield Resistance Amplifier"),
+	new BlueprintItem("Thermal Shield Amplifier I", 7010.18386892605, 100, 1, "Shield Resistance Amplifier"),
+	new Divider("Ship Scanner"),
+	new BlueprintItem("Ship Scanner I", 7001.29897641399, 100, 1, "Ship Scanner"),
+	new Divider("Shuttle"),
+	new BlueprintItem("Amarr Shuttle", 23338.3687099109, 30, 1, "Shuttle"),
+	new BlueprintItem("Caldari Shuttle", 23338.3687099109, 30, 1, "Shuttle"),
+	new BlueprintItem("Gallente Shuttle", 23338.3687099109, 30, 1, "Shuttle"),
+	new BlueprintItem("Minmatar Shuttle", 23338.3687099109, 30, 1, "Shuttle"),
+	new Divider("Siege Module"),
+	new BlueprintItem("Bastion Module I", 16184.221435719, 50, 1, "Siege Module"),
+	new BlueprintItem("Capital Industrial Core I", 267538.874283092, 3, 1, "Siege Module"),
+	new BlueprintItem("Large Industrial Core I", 192353.191077902, 3, 1, "Siege Module"),
+	new BlueprintItem("Medium Industrial Core I", 128217.41873583, 3, 1, "Siege Module"),
+	new BlueprintItem("Siege Module I", 288565.336983241, 3, 1, "Siege Module"),
+	new BlueprintItem("Triage Module I", 288565.336983241, 3, 1, "Siege Module"),
+	new Divider("Signal Amplifier"),
+	new BlueprintItem("Signal Amplifier I", 3504.31450764288, 200, 1, "Signal Amplifier"),
+	new Divider("Skirmish Command Burst Charges"),
+	new BlueprintItem("Evasive Maneuvers Charge", 3573.2214571304, 200, 500, "Skirmish Command Burst Charges"),
+	new BlueprintItem("Interdiction Maneuvers Charge", 3573.2214571304, 200, 500, "Skirmish Command Burst Charges"),
+	new BlueprintItem("Rapid Deployment Charge", 3573.2214571304, 200, 500, "Skirmish Command Burst Charges"),
+	new Divider("Smart Bomb"),
+	new BlueprintItem("Large EMP Smartbomb I", 10699.0548098263, 60, 1, "Smart Bomb"),
+	new BlueprintItem("Large Graviton Smartbomb I", 10644.541569473, 60, 1, "Smart Bomb"),
+	new BlueprintItem("Large Plasma Smartbomb I", 10671.8016044657, 60, 1, "Smart Bomb"),
+	new BlueprintItem("Large Proton Smartbomb I", 10666.5835721246, 60, 1, "Smart Bomb"),
+	new BlueprintItem("Medium EMP Smartbomb I", 7094.65895094653, 100, 1, "Smart Bomb"),
+	new BlueprintItem("Medium Graviton Smartbomb I", 7080.92044803869, 100, 1, "Smart Bomb"),
+	new BlueprintItem("Medium Plasma Smartbomb I", 7083.45975818157, 100, 1, "Smart Bomb"),
+	new BlueprintItem("Medium Proton Smartbomb I", 7079.54033646125, 100, 1, "Smart Bomb"),
+	new BlueprintItem("Small EMP Smartbomb I", 3529.43428662606, 200, 1, "Smart Bomb"),
+	new BlueprintItem("Small Graviton Smartbomb I", 3525.32026009869, 200, 1, "Smart Bomb"),
+	new BlueprintItem("Small Plasma Smartbomb I", 3528.08134198239, 200, 1, "Smart Bomb"),
+	new BlueprintItem("Small Proton Smartbomb I", 3523.96643565913, 200, 1, "Smart Bomb"),
+	new Divider("Stasis Grappler"),
+	new BlueprintItem("Heavy Stasis Grappler I", 10923.4483732966, 60, 1, "Stasis Grappler"),
+	new Divider("Stasis Web"),
+	new BlueprintItem("Stasis Webifier I", 7011.67182686206, 100, 1, "Stasis Web"),
+	new Divider("Stasis Webifying Drone"),
+	new BlueprintItem("Berserker SW-900", 3529.36777767334, 200, 1, "Stasis Webifying Drone"),
+	new BlueprintItem("Valkyrie SW-600", 2344.1578255269, 300, 1, "Stasis Webifying Drone"),
+	new BlueprintItem("Warrior SW-300", 1169.19764371622, 600, 1, "Stasis Webifying Drone"),
+	new Divider("Strip Miner"),
+	new BlueprintItem("Ice Harvester I", 8902.55499500475, 80, 1, "Strip Miner"),
+	new BlueprintItem("Strip Miner I", 8985.1582333975, 80, 1, "Strip Miner"),
+	new Divider("Super Weapon"),
+	new BlueprintItem("Pulse Activated Nexus Invulnerability Core", 260390.015464744, 2, 1, "Super Weapon"),
+	new Divider("Support Fighter"),
+	new BlueprintItem("Cenobite I", 44038.8923472211, 50, 1, "Support Fighter"),
+	new BlueprintItem("Dromi I", 44038.8923472211, 50, 1, "Support Fighter"),
+	new BlueprintItem("Scarab I", 44038.8923472211, 50, 1, "Support Fighter"),
+	new BlueprintItem("Siren I", 44038.8923472211, 50, 1, "Support Fighter"),
+	new Divider("Survey Probe"),
+	new BlueprintItem("Discovery Survey Probe I", 3537.53706375583, 200, 1, "Survey Probe"),
+	new BlueprintItem("Gaze Survey Probe I", 3563.78139724885, 200, 1, "Survey Probe"),
+	new BlueprintItem("Quest Survey Probe I", 3534.18679384129, 200, 1, "Survey Probe"),
+	new Divider("Survey Probe Launcher"),
+	new BlueprintItem("Survey Probe Launcher I", 10503.5158796779, 60, 1, "Survey Probe Launcher"),
+	new Divider("Survey Scanner"),
+	new BlueprintItem("Survey Scanner I", 7001.56946171591, 100, 1, "Survey Scanner"),
+	new Divider("Target Painter"),
+	new BlueprintItem("Target Painter I", 7012.01314347899, 100, 1, "Target Painter"),
+	new Divider("Tool"),
+	new BlueprintItem("R.A.M.- Ammunition Tech", 9739.8547933589, 200, 100, "Tool"),
+	new BlueprintItem("R.A.M.- Armor/Hull Tech", 9739.8547933589, 200, 100, "Tool"),
+	new BlueprintItem("R.A.M.- Electronics", 9739.01073182109, 200, 100, "Tool"),
+	new BlueprintItem("R.A.M.- Energy Tech", 9739.01073182109, 200, 100, "Tool"),
+	new BlueprintItem("R.A.M.- Robotics", 9739.01073182109, 200, 100, "Tool"),
+	new BlueprintItem("R.A.M.- Shield Tech", 9739.01073182109, 200, 100, "Tool"),
+	new BlueprintItem("R.A.M.- Starship Tech", 9739.01073182109, 200, 100, "Tool"),
+	new BlueprintItem("R.A.M.- Weapon Tech", 9739.01073182109, 200, 100, "Tool"),
+	new BlueprintItem("R.Db - CreoDron", 9748.88885617319, 200, 100, "Tool"),
+	new BlueprintItem("R.Db - Ishukone", 9748.88885617319, 200, 100, "Tool"),
+	new Divider("Torpedo"),
+	new BlueprintItem("Inferno Torpedo", 3538.42656616392, 200, 100, "Torpedo"),
+	new BlueprintItem("Mjolnir Torpedo", 3530.60849850787, 200, 100, "Torpedo"),
+	new BlueprintItem("Nova Torpedo", 3539.0259282293, 200, 100, "Torpedo"),
+	new BlueprintItem("Scourge Torpedo", 3533.48977286787, 200, 100, "Torpedo"),
+	new Divider("Tracking Computer"),
+	new BlueprintItem("Tracking Computer I", 7003.15951836311, 100, 1, "Tracking Computer"),
+	new Divider("Tracking Disruption Script"),
+	new BlueprintItem("Optimal Range Disruption Script", 1170.57074230522, 600, 1, "Tracking Disruption Script"),
+	new BlueprintItem("Tracking Speed Disruption Script", 1170.57074230522, 600, 1, "Tracking Disruption Script"),
+	new Divider("Tracking Enhancer"),
+	new BlueprintItem("Tracking Enhancer I", 3506.78664145848, 200, 1, "Tracking Enhancer"),
+	new Divider("Tracking Script"),
+	new BlueprintItem("Optimal Range Script", 1170.57074230522, 600, 1, "Tracking Script"),
+	new BlueprintItem("Tracking Speed Script", 1170.57074230522, 600, 1, "Tracking Script"),
+	new Divider("Tractor Beam"),
+	new BlueprintItem("Small Tractor Beam I", 3920.33199207166, 200, 1, "Tractor Beam"),
+	new Divider("Warp Core Stabilizer"),
+	new BlueprintItem("Warp Core Stabilizer I", 3504.86163785447, 200, 1, "Warp Core Stabilizer"),
+	new Divider("Warp Disrupt Field Generator"),
+	new BlueprintItem("Warp Disruption Field Generator I", 15729.9908883387, 50, 1, "Warp Disrupt Field Generator"),
+	new Divider("Warp Disruption Script"),
+	new BlueprintItem("Focused Warp Disruption Script", 1235.3700397271, 600, 1, "Warp Disruption Script"),
+	new BlueprintItem("Focused Warp Scrambling Script", 1233.08474503843, 600, 1, "Warp Disruption Script"),
+	new Divider("Warp Scrambler"),
+	new BlueprintItem("Heavy Warp Disruptor I", 146801.60469769, 5, 1, "Warp Scrambler"),
+	new BlueprintItem("Heavy Warp Scrambler I", 146989.112523841, 5, 1, "Warp Scrambler"),
+	new BlueprintItem("Warp Disruptor I", 7014.99850644329, 100, 1, "Warp Scrambler"),
+	new BlueprintItem("Warp Scrambler I", 7014.99850644329, 100, 1, "Warp Scrambler"),
+	new Divider("Weapon Disruptor"),
+	new BlueprintItem("Guidance Disruptor I", 7010.53777077858, 100, 1, "Weapon Disruptor"),
+	new BlueprintItem("Tracking Disruptor I", 7010.53777077858, 100, 1, "Weapon Disruptor"),
+	new Divider("XL Cruise Missile"),
+	new BlueprintItem("Inferno XL Cruise Missile", 5094.20600283172, 100, 100, "XL Cruise Missile"),
+	new BlueprintItem("Mjolnir XL Cruise Missile", 5073.53653028721, 100, 100, "XL Cruise Missile"),
+	new BlueprintItem("Nova XL Cruise Missile", 4987.97014514203, 100, 100, "XL Cruise Missile"),
+	new BlueprintItem("Scourge XL Cruise Missile", 4989.49425025299, 100, 100, "XL Cruise Missile"),
+	new Divider("XL Torpedo"),
+	new BlueprintItem("Inferno XL Torpedo", 5094.20600283172, 100, 100, "XL Torpedo"),
+	new BlueprintItem("Mjolnir XL Torpedo", 5073.53653028721, 100, 100, "XL Torpedo"),
+	new BlueprintItem("Nova XL Torpedo", 4987.97014514203, 100, 100, "XL Torpedo"),
+	new BlueprintItem("Scourge XL Torpedo", 4989.49425025299, 100, 100, "XL Torpedo")
+);
+
+function saveShoppingCart()
+{
+	for(var i=0;i<shoppingCart.length;i++)
+	{
+		var scItem = shoppingCart[i];
+		scItem.quantity = Math.round(document.getElementById('scQuantity' + i).value);
+		scItem.runCount = Math.round(document.getElementById('scRunCount' + i).value);
+	}
+}
+
+function updateShoppingCartTable()
+{
+	var shoppingCartHTML = "";
+
+	// Build the items table
+	shoppingCartHTML = "<table border='0' cellspacing='10px'>";
+	shoppingCartHTML += "<tr><td></td><td>Item</td><td>Runs Per Copy</td><td>Price per blueprint</td><td>Eligible for flat rate?</td><td>Number of copies</td><td>Subtotal</td></tr>";
+
+	for(var i=0;i<shoppingCart.length;i++)
+	{
+		var scItem = shoppingCart[i];
+		var item = itemForID[scItem.id];
+		var maxRuns = item.maxRuns;
+		var runsPerCopyHTML = "<input type='number' id='scRunCount" + i + "' min='1' max='" + maxRuns + "' value='" + scItem.runCount + "' onChange='onShoppingCartChanged()' />/" + maxRuns;
+		var numberOfCopiesHTML = "<input type='number' id='scQuantity" + i + "' min='1' value='" + scItem.quantity + "' onChange='onShoppingCartChanged()' />";
+		var removeHTML = "<input type='button' onClick='removeSCItem(" + i + ")' value='Remove' />"
+		shoppingCartHTML += "<tr><td>" + removeHTML + "</td><td>" + item.name + "</td><td>" + runsPerCopyHTML + "</td><td><div id='scPricePerBlueprint" + i + "'/></td><td><div id='scPriceBasis" + i + "'/></td><td>" + numberOfCopiesHTML + "</td><td><div id='scSubtotal" + i + "'/></td></tr>";
+	}
+	shoppingCartHTML += "</table>";
+	
+	document.getElementById('shoppingCart').innerHTML = shoppingCartHTML;
+}
+
+function legalizeShoppingCartQuantities()
+{
+	for(var i=0;i<shoppingCart.length;i++)
+	{
+		var scItem = shoppingCart[i];
+		var item = itemForID[scItem.id];
+		var maxRuns = item.maxRuns;
+
+		var adjustedRuns = scItem.runCount;
+		var adjustedQuantity = scItem.quantity;
+		var needRunAdjustment = false;
+		var needQuantityAdjustment = false;
+		if (scItem.runCount < 1)
+		{
+			adjustedRuns = 1;
+			needRunAdjustment = true;
+		}
+		else if (scItem.runCount > maxRuns)
+		{
+			adjustedRuns = maxRuns;
+			needRunAdjustment = true;
+		}
+		
+		if (scItem.quantity < 1)
+		{
+			adjustedQuantity = 1;
+			needQuantityAdjustment = true;
+		}
+
+		if (needQuantityAdjustment)
+		{
+			document.getElementById('scQuantity' + i).value = adjustedQuantity;
+			scItem.quantity = adjustedQuantity;
+		}
+
+		if (needRunAdjustment)
+		{
+			document.getElementById('scRunCount' + i).value = adjustedRuns;
+			scItem.runCount = adjustedRuns;
+		}
+	}
+}
+
+function onShoppingCartChanged()
+{
+	saveShoppingCart();
+	legalizeShoppingCartQuantities();
+	updateShoppingCartPrices();
+}
+
+function removeSCItem(index)
+{
+	saveShoppingCart();
+	shoppingCart.splice(index, 1);
+	updateShoppingCartTable();
+	updateShoppingCartPrices();
+}
+
+function updateShoppingCartPrices()
+{
+	var total = 0.0;
+	var discountRateTotal = 0.0;
+	var isAllDiscount = true;
+	for(var i=0;i<shoppingCart.length;i++)
+	{
+		var scItem = shoppingCart[i];
+		var item = itemForID[scItem.id];
+		var maxRuns = item.maxRuns;
+		var baseRate = item.baseRate;
+
+		var isDiscountRate = false;
+		var isMinimum = false;
+		var isDiscountEligible = false;
+		
+		var hasItemRate = (item.name in itemRates);
+		var hasCategoryRate = (item.category in categoryRates);
+		var rateMaxRuns = maxRuns;
+		if (hasItemRate && (item.name in itemRateMaxRuns))
+			rateMaxRuns = itemRateMaxRuns[item.name];
+
+		var bpPrice = scItem.runCount * item.baseRate;
+		
+		if (hasItemRate && scItem.runCount == rateMaxRuns)
+		{
+			isDiscountEligible = true;
+			var discountBPPrice = itemRates[item.name];
+			discountRateTotal += discountBPPrice * scItem.quantity;
+			if (discountBPPrice < bpPrice)
+			{
+				bpPrice = discountBPPrice;
+				isDiscountRate = true;
+			}
+		}
+		else if (hasCategoryRate && scItem.runCount == rateMaxRuns)
+		{
+			isDiscountEligible = true;
+			var discountBPPrice = categoryRates[item.category];
+			discountRateTotal += discountBPPrice * scItem.quantity;
+			if (discountBPPrice < bpPrice)
+			{
+				bpPrice = discountBPPrice;
+				isDiscountRate = true;
+			}
+		}
+		if (bpPrice < globalMinimum)
+		{
+			isMinimum = true;
+			bpPrice = globalMinimum;
+		}
+
+		if (!isDiscountEligible)
+			isAllDiscount = false;
+
+		var bpSubtotal = bpPrice * scItem.quantity;
+		if (isDiscountEligible)
+			priceBasisText = "Yes";
+		else if (hasItemRate || hasCategoryRate)
+			priceBasisText = "No (Runs must be " + rateMaxRuns + ")";
+		else
+			priceBasisText = "No";
+
+		document.getElementById('scPricePerBlueprint' + i).innerHTML = bpPrice.toFixed(2) + " ISK";
+		document.getElementById('scPriceBasis' + i).innerHTML = priceBasisText;
+		document.getElementById('scSubtotal' + i).innerHTML = bpSubtotal.toFixed(2) + " ISK";
+
+		total += bpSubtotal;
+	}
+
+	var totalMinimumText = "";
+
+	if (total < totalMinimum)
+	{
+		total = totalMinimum;
+		totalMinimumText = " (Custom Order Minimum)";
+	}
+	if (isAllDiscount && discountRateTotal < total)
+	{
+		total = discountRateTotal;
+		totalMinimumText = " (Flat Rate)";
+	}
+
+	document.getElementById('priceDisplay').innerHTML = "<h1>" + Math.round(total).toLocaleString('en-US') + " ISK" + totalMinimumText + "</h1>";
+
+	encodeOrder();
+}
+
+function addItem(itemId)
+{
+	saveShoppingCart();
+
+	var item = itemForID[itemId];
+	var haveItem = false
+	var itemIndex = 0;
+	for(var i=0;i<shoppingCart.length;i++)
+	{
+		if (shoppingCart[i].id == itemId)
+		{
+			haveItem = true;
+			itemIndex = i;
+		}
+	}
+
+	if (haveItem)
+		shoppingCart[itemIndex].quantity += 1;
+	else
+	{
+		var rateMaxRuns = item.maxRuns;
+		if (item.name in itemRateMaxRuns)
+			rateMaxRuns = itemRateMaxRuns[item.name];
+
+		shoppingCart.push(new ShoppingCartItem(itemId, rateMaxRuns, 1));
+	}
+
+	updateShoppingCartTable();
+	updateShoppingCartPrices();
+}
+
+(function() {
+	var id = 0;
+
+	for(var i=0;i<bpcItems.length;i++)
+	{
+		itemForID[id] = bpcItems[i];
+		bpcItems[i].id = id;
+		id += bpcItems[i].idInc;
+	}
+
+	numItems = id;
+
+	var itemsTableHTML = "";
+
+	// Build the items table
+	itemsTableHTML = "<table border='0' cellspacing='0'>";
+	itemsTableHTML += "<tr><td></td><td></td><td width='160px'>Base Rate Per Run</td><td></td>";
+	for(var i=0;i<bpcItems.length;i++)
+	{
+		var item = bpcItems[i];
+
+		if (item.specialType == "item")
+		{
+			var discountAvailable = ""
+			if (item.name in itemRates)
+			{
+				var maxRunsExpected = item.maxRuns;
+				if (item.name in itemRateMaxRuns)
+					maxRunsExpected = itemRateMaxRuns[item.name];
+				discountAvailable = "<b>Flat Rate: " + itemRates[item.name].toLocaleString("en-US") + " ISK for " + maxRunsExpected + " runs </b>";
+			}
+			else if (item.category in categoryRates)
+				discountAvailable = "<b>Flat Rate: " + categoryRates[item.category].toLocaleString("en-US") + " ISK for " + item.maxRuns + " runs </b>";
+			var addButton = "<input type='button' name='addButton" + item.id + "' value='Add' onClick='addItem(" + item.id + ")'/>"
+			var unitsNote = "";
+			if (item.unitsPerRun != 1)
+				unitsNote = " <b>(" + item.unitsPerRun + " units/run)</b>";
+			if (item.name in warnings)
+				unitsNote += " <span style='color:red'><b>(" + warnings[item.name] + ")</b></span>";
+			itemsTableHTML += "<tr><td>" + item.name + unitsNote + "</td><td>" + addButton + "</td><td>" + item.baseRate.toFixed(2) + " ISK</td><td>" + discountAvailable + "</td></tr>\n";
+		}
+		else if(item.specialType == "desc")
+		{
+			itemsTableHTML += "<tr><td><br/></td></tr>\n";
+			itemsTableHTML += "<tr><td colspan='3'><b>" + item.desc + "</b></td></tr>\n";
+		}
+	}
+	itemsTableHTML += "</table>";
+
+	document.getElementById('mainTable').innerHTML = itemsTableHTML;
+})();
+
+
+
+</script>
+
+</body></html>
