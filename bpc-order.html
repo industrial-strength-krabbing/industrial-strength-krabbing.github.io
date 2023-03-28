@@ -1,3 +1,4 @@
+<!DOCTYPE html>
 <META HTTP-EQUIV="EXPIRES" CONTENT="0"/>
 
 <html><head>
@@ -22,6 +23,16 @@ Price:<br/>
 
 <hr/>
 
+<h2>Presets</h2>
+
+Preset package: <select id="presetsDropDown">
+<option value="mrnv-comps">Moros Navy Issue Components</option>
+<option value="pxnv-comps">Phoenix Navy Issue Components</option>
+<option value="rvnv-comps">Revelation Navy Issue Components</option>
+</select> <input type="button" id="addPreset" onClick="addPreset()" value="Add" />
+
+<hr/>
+
 <h2>Items</h2>
 
 <table border="1" width="100%">
@@ -39,6 +50,7 @@ var base64key = "tHMnioKu7?q2pxAfVJQ9whFSrNY#cR86W&zdBG3k1T4sPELj$U5CZ!XbmyeagDv
 
 
 var itemForID = new Object();
+var itemForName = new Object();
 var numItems;
 var locationRate = 1;
 
@@ -200,6 +212,46 @@ function encodeOrder()
 		document.getElementById('quickrefcode').value = "";
 }
 
+function addPreset()
+{
+	var presetName = document.getElementById('presetsDropDown').value;
+	var preset = presets[presetName];
+
+	for(var i=0;i<preset.length;i++)
+	{
+		var pItemEntry = preset[i];
+
+		var existingSCItem = null;
+
+		var item = itemForName[pItemEntry.item];
+
+		for(var j=0;j<shoppingCart.length;j++)
+		{
+			var scItem = shoppingCart[j];
+
+			if (itemForID[scItem.id] == item)
+				existingSCItem = scItem;
+		}
+
+		var runsRequired = Math.ceil(pItemEntry.unitsRequired / item.unitsPerRun);
+
+		if (existingSCItem == null)
+		{
+			// There is no existing shopping cart item, try to compute a count.
+			var copiesRequired = Math.ceil(runsRequired / item.maxRuns);
+			var runsPerCopy = Math.ceil(runsRequired / copiesRequired);
+			shoppingCart.push(new ShoppingCartItem(item.id, runsPerCopy, copiesRequired));
+		}
+		else
+		{
+			var copiesRequired = Math.ceil(runsRequired / existingSCItem.runCount);
+			existingSCItem.quantity = existingSCItem.quantity + copiesRequired;
+		}
+	}
+
+	updateShoppingCartTable();
+	updateShoppingCartPrices();
+}
 
 function decodeOrder()
 {
@@ -241,6 +293,101 @@ function formatPrice(nStr)
 	}
 	return x1 + x2 + " ISK";
 }
+
+function PresetItem(unitsRequired, item)
+{
+	this.unitsRequired = unitsRequired;
+	this.item = item;
+}
+
+var presets = new Object();
+
+presets["mrnv-comps"] = [
+	new PresetItem(5, "Capital Propulsion Engine"),
+	new PresetItem(20, "Capital Turret Hardpoint"),
+	new PresetItem(4, "Capital Sensor Cluster"),
+	new PresetItem(4, "Capital Armor Plates"),
+	new PresetItem(2, "Capital Capacitor Battery"),
+	new PresetItem(2, "Capital Power Generator"),
+	new PresetItem(3, "Capital Shield Emitter"),
+	new PresetItem(2, "Capital Jump Drive"),
+	new PresetItem(2, "Capital Computer System"),
+	new PresetItem(2, "Capital Construction Parts"),
+	new PresetItem(20, "Capital Siege Array"),
+	new PresetItem(5, "Capital Ship Maintenance Bay"),
+	new PresetItem(2, "Capital Corporate Hangar Bay"),
+	new PresetItem(16, "S-R Trigger Neurolink Conduit"),
+	new PresetItem(2, "Magnetometric-FTL Interlink Communicator"),
+	new PresetItem(400, "Auto-Integrity Preservation Seal"),
+	new PresetItem(200, "Life Support Backup Unit"),
+	new PresetItem(1, "Capital Core Temperature Regulator"),
+		new PresetItem(63, "Core Temperature Regulator"),
+	new PresetItem(1, "Neurolink Protection Cell"),
+		new PresetItem(1, "Neurolink Enhancer Reservoir"),
+			new PresetItem(1, "Programmable Purification Membrane"),
+		new PresetItem(1, "Genetic Safeguard Filter"),
+			new PresetItem(100, "Genetic Structure Repairer"),
+			new PresetItem(100, "Genetic Mutation Inhibitor"),
+			new PresetItem(100, "Genetic Lock Preserver")
+];
+
+presets["rvnv-comps"] = [
+	new PresetItem(5, "Capital Propulsion Engine"),
+	new PresetItem(20, "Capital Turret Hardpoint"),
+	new PresetItem(4, "Capital Sensor Cluster"),
+	new PresetItem(5, "Capital Armor Plates"),
+	new PresetItem(2, "Capital Capacitor Battery"),
+	new PresetItem(2, "Capital Power Generator"),
+	new PresetItem(2, "Capital Shield Emitter"),
+	new PresetItem(2, "Capital Jump Drive"),
+	new PresetItem(2, "Capital Computer System"),
+	new PresetItem(2, "Capital Construction Parts"),
+	new PresetItem(20, "Capital Siege Array"),
+	new PresetItem(5, "Capital Ship Maintenance Bay"),
+	new PresetItem(2, "Capital Corporate Hangar Bay"),
+	new PresetItem(16, "U-C Trigger Neurolink Conduit"),
+	new PresetItem(2, "Radar-FTL Interlink Communicator"),
+	new PresetItem(400, "Auto-Integrity Preservation Seal"),
+	new PresetItem(200, "Life Support Backup Unit"),
+	new PresetItem(1, "Capital Core Temperature Regulator"),
+		new PresetItem(63, "Core Temperature Regulator"),
+	new PresetItem(1, "Neurolink Protection Cell"),
+		new PresetItem(1, "Neurolink Enhancer Reservoir"),
+			new PresetItem(1, "Programmable Purification Membrane"),
+		new PresetItem(1, "Genetic Safeguard Filter"),
+			new PresetItem(100, "Genetic Structure Repairer"),
+			new PresetItem(100, "Genetic Mutation Inhibitor"),
+			new PresetItem(100, "Genetic Lock Preserver")
+];
+
+presets["pxnv-comps"] = [
+	new PresetItem(5, "Capital Propulsion Engine"),
+	new PresetItem(2, "Capital Sensor Cluster"),
+	new PresetItem(2, "Capital Armor Plates"),
+	new PresetItem(2, "Capital Capacitor Battery"),
+	new PresetItem(2, "Capital Power Generator"),
+	new PresetItem(5, "Capital Shield Emitter"),
+	new PresetItem(2, "Capital Jump Drive"),
+	new PresetItem(4, "Capital Computer System"),
+	new PresetItem(2, "Capital Construction Parts"),
+	new PresetItem(20, "Capital Siege Array"),
+	new PresetItem(20, "Capital Launcher Hardpoint"),
+	new PresetItem(5, "Capital Ship Maintenance Bay"),
+	new PresetItem(2, "Capital Corporate Hangar Bay"),
+	new PresetItem(16, "R-O Trigger Neurolink Conduit"),
+	new PresetItem(2, "Gravimetric-FTL Interlink Communicator"),
+	new PresetItem(400, "Auto-Integrity Preservation Seal"),
+	new PresetItem(200, "Life Support Backup Unit"),
+	new PresetItem(1, "Capital Core Temperature Regulator"),
+		new PresetItem(63, "Core Temperature Regulator"),
+	new PresetItem(1, "Neurolink Protection Cell"),
+		new PresetItem(1, "Neurolink Enhancer Reservoir"),
+			new PresetItem(1, "Programmable Purification Membrane"),
+		new PresetItem(1, "Genetic Safeguard Filter"),
+			new PresetItem(100, "Genetic Structure Repairer"),
+			new PresetItem(100, "Genetic Mutation Inhibitor"),
+			new PresetItem(100, "Genetic Lock Preserver")
+];
 
 var warnings = new Object();
 
@@ -1976,6 +2123,7 @@ function addItem(itemId)
 	for(var i=0;i<bpcItems.length;i++)
 	{
 		itemForID[id] = bpcItems[i];
+		itemForName[bpcItems[i].name] = bpcItems[i];
 		bpcItems[i].id = id;
 		id += bpcItems[i].idInc;
 	}
