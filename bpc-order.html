@@ -221,32 +221,34 @@ function addPreset()
 	{
 		var pItemEntry = preset[i];
 
-		var existingSCItem = null;
+		var scItem = null;
 
 		var item = itemForName[pItemEntry.item];
 
 		for(var j=0;j<shoppingCart.length;j++)
 		{
-			var scItem = shoppingCart[j];
+			var candidate = shoppingCart[j];
 
-			if (itemForID[scItem.id] == item)
-				existingSCItem = scItem;
+			if (itemForID[candidate.id] == item)
+				scItem = candidate;
 		}
 
 		var runsRequired = Math.ceil(pItemEntry.unitsRequired / item.unitsPerRun);
 
-		if (existingSCItem == null)
+		if (scItem == null)
 		{
-			// There is no existing shopping cart item, try to compute a count.
-			var copiesRequired = Math.ceil(runsRequired / item.maxRuns);
-			var runsPerCopy = Math.ceil(runsRequired / copiesRequired);
-			shoppingCart.push(new ShoppingCartItem(item.id, runsPerCopy, copiesRequired));
+			scItem = new ShoppingCartItem(item.id, 1, 0);
+			shoppingCart.push(scItem);
 		}
 		else
-		{
-			var copiesRequired = Math.ceil(runsRequired / existingSCItem.runCount);
-			existingSCItem.quantity = existingSCItem.quantity + copiesRequired;
-		}
+			runsRequired = runsRequired + scItem.runCount * scItem.quantity;
+
+		// Convert into copies
+		var copiesRequired = Math.ceil(runsRequired / item.maxRuns);
+		var runsPerCopy = Math.ceil(runsRequired / copiesRequired);
+
+		scItem.quantity = copiesRequired;
+		scItem.runCount = runsPerCopy;
 	}
 
 	updateShoppingCartTable();
