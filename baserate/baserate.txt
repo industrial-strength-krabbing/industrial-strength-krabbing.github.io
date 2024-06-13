@@ -1382,4 +1382,4 @@
 	new BlueprintItem("Inferno XL Torpedo", 5757.35862771813, 100, 100, "XL Torpedo"),
 	new BlueprintItem("Mjolnir XL Torpedo", 5664.18699408781, 100, 100, "XL Torpedo"),
 	new BlueprintItem("Nova XL Torpedo", 5459.76853415961, 100, 100, "XL Torpedo"),
-	new BlueprintItem("Scourge XL Torpedo", 5397.21427927046, 100, 100, "XL Torpedo"),
+	new BlueprintItem("Scourge XL Torpedo", 5397.21427927046, 100, 100, "XL Torpedo")
