@@ -173,6 +173,7 @@
 	new BlueprintItem("Capital Ship Maintenance Bay", 139058.845538208, 40, 1, "Capital Construction Components"),
 	new BlueprintItem("Capital Siege Array", 124362.351608478, 40, 1, "Capital Construction Components"),
 	new BlueprintItem("Capital Turret Hardpoint", 122073.766565955, 40, 1, "Capital Construction Components"),
+	new BlueprintItem("Enhanced Neurolink Protection Cell", 65106460.6254082, 40, 1, "Capital Construction Components"),
 	new BlueprintItem("Neurolink Protection Cell", 900213.440081313, 20, 1, "Capital Construction Components"),
 	new Divider("Capital Industrial Ship"),
 	new BlueprintItem("Rorqual", 24487156.8419663, 1, 1, "Capital Industrial Ship"),
