@@ -353,6 +353,7 @@
 	new BlueprintItem("Thrasher", 36894.52555824, 20, 1, "Destroyer"),
 	new Divider("Dreadnought"),
 	new BlueprintItem("Moros", 18305422.201878, 1, 1, "Dreadnought"),
+	new BlueprintItem("Naglfar", 18145169.7734078, 1, 1, "Dreadnought"),
 	new BlueprintItem("Phoenix", 18535982.3501882, 1, 1, "Dreadnought"),
 	new BlueprintItem("Revelation", 18675490.5397768, 1, 1, "Dreadnought"),
 	new Divider("Drone Control Range Module"),
